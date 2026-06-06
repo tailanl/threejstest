@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>简洁白色兵棋图标生成器</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Segoe UI',system-ui,sans-serif;background:#1a1a2e;color:#eee;padding:20px}
+  h1{color:#00d4ff;font-size:22px;margin-bottom:6px}
+  .sub{color:#888;font-size:13px;margin-bottom:16px}
+  #status{margin:10px 0;font-size:14px;color:#4ade80}
+  #grid{display:flex;flex-wrap:wrap;gap:16px;margin-top:16px;justify-content:center}
+  .card{background:#16213e;border:1px solid #0f3460;border-radius:12px;padding:14px;text-align:center;width:160px}
+  .card img{image-rendering:auto;border-radius:8px;display:block;margin:0 auto 8px;background:#0a0a15}
+  .card .name{font-size:13px;color:#00d4ff;font-weight:600}
+  .card .faction{font-size:11px;color:#888;margin-top:2px}
+  #dlAll{margin-top:24px;padding:12px 28px;background:#e94560;color:#fff;border:none;border-radius:10px;cursor:pointer;font-size:15px;font-weight:700;display:block;margin-left:auto;margin-right:auto}
+  #dlAll:hover{background:#ff6b6b}
+  .opts{display:flex;gap:16px;align-items:center;margin:16px 0;font-size:14px;background:#16213e;padding:12px;border-radius:10px}
+  .opts label{color:#aaa}
+  .opts select{background:#0f3460;color:#fff;border:1px solid #1a5276;padding:6px 12px;border-radius:8px;cursor:pointer}
+</style>
+</head>
+<body>
+<h1>⚔️ 简洁白色兵棋图标生成器</h1>
+<div class="sub">纯白几何剪影 · 彩色底座 · 中文标签 · 红蓝阵营</div>
+
+<div class="opts">
+  <label>尺寸:</label>
+  <select id="sizeSel" onchange="regen()">
+    <option value="256">256×256</option>
+    <option value="384" selected>384×384</option>
+    <option value="512">512×512</option>
+  </select>
+  <label>底座样式:</label>
+  <select id="styleSel" onchange="regen()">
+    <option value="round">圆角矩形</option>
+    <option value="circle">圆形</option>
+    <option value="hex">六边形</option>
+  </select>
+</div>
+
+<div id="status">正在生成...</div>
+<div id="grid"></div>
+<button id="dlAll" style="display:none" onclick="downloadAll()">⬇️ 打包下载全部 (ZIP)</button>
+
+<script>
+const UNITS = [
+  {id:'tank', zh:'坦克'},
+  {id:'ifv', zh:'步兵战车'},
+  {id:'artillery', zh:'火炮'},
+  {id:'scout', zh:'侦察车'},
+  {id:'infantry', zh:'步兵'},
+  {id:'sam', zh:'防空导弹'},
+  {id:'engineer', zh:'工兵'},
+  {id:'supply', zh:'补给车'},
+  {id:'helicopter', zh:'直升机'},
+  {id:'mlrs', zh:'火箭炮'},
+  {id:'atgm', zh:'反坦克导弹'},
+  {id:'uav', zh:'无人机'},
+  {id:'command', zh:'指挥车'},
+  {id:'ew', zh:'电子战'},
+];
+
+const FACTIONS = {
+  red: { base: '#c62828', dark: '#8b0000' },
+  blue: { base: '#1565c0', dark: '#0d47a1' },
+};
+
+let generatedFiles = [];
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
+function drawHexagon(ctx, cx, cy, r) {
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const angle = (Math.PI / 3) * i - Math.PI / 6;
+    const x = cx + r * Math.cos(angle);
+    const y = cy + r * Math.sin(angle);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+}
+
+function drawSimpleIcon(ctx, unitId, size) {
+  const c = size * 0.42;
+  const iconArea = size * 0.36;
+  const s = iconArea / 100;
+
+  ctx.save();
+  ctx.translate(c, c - size * 0.02);
+  ctx.scale(s, s);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 4;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  switch(unitId) {
+    case 'tank':
+      ctx.beginPath();
+      ctx.roundRect(15, 35, 70, 40, 6);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(50, 45, 18, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillRect(68, 40, 30, 8);
+      break;
+
+    case 'ifv':
+      ctx.beginPath();
+      ctx.roundRect(18, 38, 64, 36, 5);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(48, 46, 14, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillRect(62, 43, 22, 6);
+      break;
+
+    case 'artillery':
+      ctx.beginPath();
+      ctx.roundRect(20, 45, 60, 32, 4);
+      ctx.fill();
+      ctx.fillRect(25, 25, 8, 25);
+      ctx.fillRect(67, 25, 8, 25);
+      ctx.beginPath();
+      ctx.moveTo(33, 35);
+      ctx.lineTo(85, 15);
+      ctx.lineWidth = 7;
+      ctx.stroke();
+      break;
+
+    case 'scout':
+      ctx.beginPath();
+      ctx.roundRect(22, 38, 56, 34, 5);
+      ctx.fill();
+      ctx.fillRect(46, 20, 8, 22);
+      ctx.beginPath();
+      ctx.arc(50, 17, 6, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+
+    case 'infantry':
+      ctx.beginPath();
+      ctx.arc(50, 25, 14, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.roundRect(40, 42, 20, 35, 4);
+      ctx.fill();
+      ctx.fillRect(30, 50, 14, 30);
+      ctx.fillRect(56, 50, 14, 30);
+      ctx.fillRect(44, 52, 12, 35);
+      break;
+
+    case 'sam':
+      ctx.beginPath();
+      ctx.roundRect(20, 42, 60, 34, 5);
+      ctx.fill();
+      ctx.fillRect(44, 22, 12, 24);
+      ctx.beginPath();
+      ctx.moveTo(50, 22);
+      ctx.quadraticCurveTo(65, 18, 72, 28);
+      ctx.quadraticCurveTo(65, 34, 50, 30);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillRect(18, 50, 8, 26);
+      ctx.fillRect(74, 50, 8, 26);
+      break;
+
+    case 'engineer':
+      ctx.beginPath();
+      ctx.roundRect(20, 42, 60, 32, 4);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(35, 38);
+      ctx.lineTo(80, 12);
+      ctx.lineWidth = 6;
+      ctx.stroke();
+      ctx.fillRect(78, 10, 12, 8);
+      break;
+
+    case 'supply':
+      ctx.beginPath();
+      ctx.roundRect(25, 35, 25, 42, 4);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.roundRect(50, 35, 25, 42, 4);
+      ctx.fill();
+      ctx.fillRect(37, 28, 26, 10);
+      ctx.fillRect(30, 54, 12, 24);
+      ctx.fillRect(58, 54, 12, 24);
+      break;
+
+    case 'helicopter':
+      ctx.beginPath();
+      ctx.ellipse(50, 50, 35, 18, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillRect(45, 28, 10, 6);
+      ctx.fillRect(20, 47, 60, 4);
+      ctx.beginPath();
+      ctx.ellipse(82, 45, 12, 6, 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+
+    case 'mlrs':
+      ctx.beginPath();
+      ctx.roundRect(22, 42, 56, 32, 4);
+      ctx.fill();
+      ctx.fillRect(30, 22, 40, 22);
+      for(let i=0; i<4; i++) {
+        ctx.fillStyle = '#0a0a15';
+        ctx.fillRect(34 + i*11, 26, 6, 14);
+        ctx.fillStyle = '#ffffff';
+      }
+      ctx.fillRect(26, 50, 8, 26);
+      ctx.fillRect(66, 50, 8, 26);
+      break;
+
+    case 'atgm':
+      ctx.beginPath();
+      ctx.roundRect(22, 44, 56, 30, 4);
+      ctx.fill();
+      ctx.fillRect(46, 26, 8, 22);
+      ctx.beginPath();
+      ctx.moveTo(50, 28);
+      ctx.lineTo(88, 14);
+      ctx.lineWidth = 5;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(90, 12, 5, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+
+    case 'uav':
+      ctx.beginPath();
+      ctx.ellipse(50, 50, 28, 16, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(50, 42, 36, 12, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillRect(22, 48, 14, 4);
+      ctx.fillRect(64, 48, 14, 4);
+      break;
+
+    case 'command':
+      ctx.beginPath();
+      ctx.roundRect(22, 42, 56, 32, 4);
+      ctx.fill();
+      ctx.fillRect(46, 22, 8, 24);
+      ctx.beginPath();
+      ctx.arc(50, 18, 14, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(36, 30);
+      ctx.lineTo(64, 30);
+      ctx.moveTo(50, 16);
+      ctx.lineTo(50, 34);
+      ctx.stroke();
+      break;
+
+    case 'ew':
+      ctx.beginPath();
+      ctx.roundRect(22, 42, 56, 32, 4);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(50, 34, 18, 0, Math.PI * 2);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+      for(let i=0; i<3; i++) {
+        const angle = -Math.PI/3 + (Math.PI/3)*i;
+        const x1 = 50 + 18*Math.cos(angle);
+        const y1 = 34 + 18*Math.sin(angle);
+        const x2 = 50 + 30*Math.cos(angle);
+        const y2 = 34 + 30*Math.sin(angle);
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(x2, y2, 3, 0, Math.PI*2);
+        ctx.fill();
+      }
+      break;
+  }
+
+  ctx.restore();
+}
+
+function generateIcon(unitId, faction, size, style, isHero=false) {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const fc = FACTIONS[faction];
+
+  ctx.clearRect(0, 0, size, size);
+
+  const pad = size * 0.06;
+  const iconSize = size - pad * 2;
+  const fx = pad;
+  const fy = pad + size * 0.08;
+  const fw = iconSize;
+  const fh = iconSize * 0.75;
+
+  if (style === 'circle') {
+    ctx.beginPath();
+    ctx.arc(size/2, size/2 - size*0.03, iconSize/2 * 0.9, 0, Math.PI*2);
+    ctx.fillStyle = fc.base;
+    ctx.fill();
+    ctx.strokeStyle = fc.dark;
+    ctx.lineWidth = size * 0.015;
+    ctx.stroke();
+  } else if (style === 'hex') {
+    drawHexagon(ctx, size/2, size/2 - size*0.03, iconSize/2 * 0.95);
+    ctx.fillStyle = fc.base;
+    ctx.fill();
+    ctx.strokeStyle = fc.dark;
+    ctx.lineWidth = size * 0.015;
+    ctx.stroke();
+  } else {
+    roundRect(ctx, fx, fy, fw, fh, size * 0.08);
+    ctx.fillStyle = fc.base;
+    ctx.fill();
+
+    roundRect(ctx, fx + size*0.025, fy + size*0.025, fw - size*0.05, fh - size*0.05, size * 0.05);
+    ctx.strokeStyle = fc.dark;
+    ctx.lineWidth = size * 0.012;
+    ctx.stroke();
+  }
+
+  drawSimpleIcon(ctx, unitId, size);
+
+  if (isHero) {
+    ctx.save();
+    roundRect(ctx, fx - size*0.01, fy - size*0.01, fw + size*0.02, fh + size*0.02, size * 0.07);
+    ctx.strokeStyle = '#ffd700';
+    ctx.lineWidth = size * 0.025;
+    ctx.setLineDash([size*0.04, size*0.02]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.beginPath();
+    const sr = size * 0.055;
+    const ir = sr * 0.4;
+    const starY = fy - size * 0.04;
+    for (let j = 0; j < 10; j++) {
+      const r = j % 2 === 0 ? sr : ir;
+      const a = (Math.PI / 5) * j - Math.PI / 2;
+      const px = size/2 + Math.cos(a) * sr * 1.8;
+      const py = starY + Math.sin(a) * sr * 1.8;
+      j === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fillStyle = '#ffd700';
+    ctx.fill();
+    ctx.restore();
+  }
+
+  const labelY = size - pad - size * 0.09;
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  roundRect(ctx, pad, labelY - size*0.055, size - pad*2, size * 0.11, size * 0.025);
+  ctx.fill();
+
+  const unitName = UNITS.find(u => u.id === unitId)?.zh || unitId;
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `bold ${size * 0.065}px "Microsoft YaHei", sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(unitName, size/2, labelY);
+
+  return canvas;
+}
+
+async function regen() {
+  const sizeSel = document.getElementById('sizeSel');
+  const styleSel = document.getElementById('styleSel');
+  const size = parseInt(sizeSel.value);
+  const style = styleSel.value;
+  const grid = document.getElementById('grid');
+  const status = document.getElementById('status');
+
+  grid.innerHTML = '';
+  generatedFiles = [];
+  status.textContent = `正在生成 ${UNITS.length * 4} 个图标...`;
+
+  let count = 0;
+  for (const unit of UNITS) {
+    for (const [factionKey, fc] of Object.entries(FACTIONS)) {
+      for (const isHero of [false, true]) {
+        const canvas = generateIcon(unit.id, factionKey, size, style, isHero);
+        const dataUrl = canvas.toDataURL('image/png');
+
+        const heroSuffix = isHero ? '_hero' : '';
+        const filename = `${unit.id}_${factionKey}${heroSuffix}.png`;
+
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML = `
+          <img src="${dataUrl}" width="${size/2}" height="${size/2}">
+          <div class="name">${unit.zh}</div>
+          <div class="faction">${fc.base === '#c62828' ? '🔴 红方' : '🔵 蓝方'}${isHero ? ' ★英雄' : ''}</div>
+        `;
+        grid.appendChild(card);
+
+        try {
+          const resp = await fetch(dataUrl);
+          const blob = await resp.blob();
+          generatedFiles.push({ filename, blob });
+        } catch(e) {}
+
+        count++;
+        status.textContent = `已生成 ${count}/${UNITS.length * 4}...`;
+      }
+    }
+  }
+
+  status.textContent = `✅ 全部完成! 共 ${count} 个图标`;
+  document.getElementById('dlAll').style.display = 'block';
+}
+
+async function downloadAll() {
+  if(generatedFiles.length === 0) return;
+
+  const btn = document.getElementById('dlAll');
+  btn.textContent = '⏳ 正在打包...';
+  btn.disabled = true;
+
+  const { default: JSZip } = await import('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js');
+  const zip = new JSZip();
+
+  for(const f of generatedFiles) {
+    zip.file(f.filename, f.blob);
+  }
+
+  const content = await zip.generateAsync({ type: 'blob' });
+  const url = URL.createObjectURL(content);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `nato-symbols-simple-white.zip`;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  btn.textContent = '⬇️ 打包下载全部 (ZIP)';
+  btn.disabled = false;
+}
+
+regen();
+</script>
+</body>
+</html>
