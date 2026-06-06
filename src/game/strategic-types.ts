@@ -38,7 +38,7 @@ export interface StrategicForce {
 }
 
 /** Strategic base terrain type for map generation */
-export type StrategicBaseTerrainType = 'plains' | 'forest' | 'mountain' | 'water' | 'desert' | 'marshland' | 'highland';
+export type StrategicBaseTerrainType = 'plains' | 'forest' | 'mountain' | 'water' | 'desert' | 'marshland' | 'highland' | 'city';
 
 /** Strategic feature type for map generation */
 export type StrategicFeatureType = 'river' | 'main_road' | 'secondary_road' | 'bridge' | 'city' | 'city_center' | 'capital' | 'port' | 'fortress' | 'airfield' | 'supply_depot' | 'rail';

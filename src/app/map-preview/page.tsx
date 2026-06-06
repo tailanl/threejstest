@@ -5,6 +5,21 @@ import { generateProceduralMap, generateHierarchicalMap, getAvailableTemplates, 
 import type { MegaMapResult } from '@/game/procedural-map';
 import { generateStrategicMap } from '@/game/strategic-map';
 import type { StrategicMap } from '@/game/strategic-types';
+import { generateDetailMapFromStrategicSector } from '@/game/detail-map-generator';
+import type { DetailMap } from '@/game/detail-map-types';
+import DetailMapPreview from '@/components/game/DetailMapPreview';
+import type { GameMap } from '@/game/types';
+import type { TacticalFromDetailConfig } from '@/game/tactical-from-detail';
+import { createDeploymentZonesForTacticalMap, createTacticalObjectives, DEFAULT_TACTICAL_FROM_DETAIL_CONFIG } from '@/game/tactical-from-detail';
+import type { WorldMap } from '@/game/world-map-types';
+import { generateWorldMap } from '@/game/world-map-generator';
+import { DEFAULT_WORLD_MAP_CONFIG, DEBUG_WORLD_MAP_CONFIG } from '@/game/world-map-config';
+import { buildStrategicMapFromWorldMap } from '@/game/world-map-strategic-adapter';
+import { getOperationView } from '@/game/world-map-view';
+import { getCombatViewport } from '@/game/combat-viewport';
+import { convertCombatViewportToGameMap } from '@/game/world-to-game-map';
+import StrategicChunkView from '@/components/game/StrategicChunkView';
+import WorldMapCanvas from '@/components/game/WorldMapCanvas';
 import { TERRAIN_CONFIGS } from '@/game/config';
 import type { MapCell } from '@/game/types';
 
@@ -109,6 +124,17 @@ export default function MapPreviewPage() {
   const [stratConfig, setStratConfig] = useState({ seed: 20260606, width: 64, height: 48, worldShape: 'peninsula' as const });
   const [stratHovered, setStratHovered] = useState<{ x: number; y: number } | null>(null);
   const [stratDebugLayer, setStratDebugLayer] = useState<'terrain' | 'elevation' | 'slope' | 'moisture' | 'cityScore' | 'roadCost' | 'chokepoint' | 'defense' | 'supply'>('terrain');
+  const [selectedDetailMap, setSelectedDetailMap] = useState<DetailMap | null>(null);
+  const [detailMapRadius, setDetailMapRadius] = useState<0 | 1>(0);
+  const [tacticalMapPreview, setTacticalMapPreview] = useState<GameMap | null>(null);
+  const [tacticalConfig, setTacticalConfig] = useState<TacticalFromDetailConfig | null>(null);
+
+  // WorldMap state
+  const [worldMapData, setWorldMapData] = useState<WorldMap | null>(null);
+  const [isGeneratingWorld, setIsGeneratingWorld] = useState(false);
+  const [worldMapUseDebug, setWorldMapUseDebug] = useState(true);
+  const [selectedWorldChunk, setSelectedWorldChunk] = useState<{ x: number; y: number } | null>(null);
+  const [operationViewRect, setOperationViewRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
 
   const galleryThumbs = useMemo(() => {
     return gallerySeeds.map(seed => {
@@ -837,6 +863,40 @@ export default function MapPreviewPage() {
                     🗑️ 清除
                   </button>
                 )}
+              </div>
+
+              {/* WorldMap generation */}
+              <div className="border-t border-white/10 pt-3 mt-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs text-cyan-300/70 font-semibold">🌍 单一母地图系统</span>
+                  <label className="flex items-center gap-1 text-xs text-white/50 cursor-pointer">
+                    <input type="checkbox" checked={worldMapUseDebug} onChange={e => setWorldMapUseDebug(e.target.checked)} className="rounded" />
+                    512×512 调试模式
+                  </label>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => {
+                    setIsGeneratingWorld(true);
+                    setTimeout(() => {
+                      try {
+                        const cfg = worldMapUseDebug ? { ...DEBUG_WORLD_MAP_CONFIG, seed: stratConfig.seed } : { ...DEFAULT_WORLD_MAP_CONFIG, seed: stratConfig.seed };
+                        const wm = generateWorldMap(cfg);
+                        setWorldMapData(wm);
+                        // Also build compatible strategic map
+                        const sm = buildStrategicMapFromWorldMap(wm);
+                        setStratMapData(sm);
+                      } catch (err) { console.error(err); }
+                      setIsGeneratingWorld(false);
+                    }, 50);
+                  }} disabled={isGeneratingWorld} className={`flex-1 bg-gradient-to-r text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-lg transition-all cursor-pointer ${isGeneratingWorld ? 'from-gray-600 to-gray-500 cursor-wait' : 'from-cyan-700 to-blue-600 hover:from-cyan-600 hover:to-blue-500 shadow-cyan-500/30'}`}>
+                    {isGeneratingWorld ? '⏳ 生成中...' : `🌍 生成 WorldMap (${worldMapUseDebug ? '512' : '1024'}×${worldMapUseDebug ? '512' : '1024'})`}
+                  </button>
+                  {worldMapData && (
+                    <button onClick={() => { setWorldMapData(null); setSelectedWorldChunk(null); setOperationViewRect(null); }} className="px-4 py-2.5 bg-gray-700 text-white rounded-lg text-sm font-medium hover:bg-gray-600 transition-colors cursor-pointer">
+                      🗑️ 清除
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           ) : null}
@@ -2032,6 +2092,16 @@ export default function MapPreviewPage() {
 
                       return (
                         <div key={idx}
+                          onClick={() => {
+                            if (stratMapData) {
+                              const dm = generateDetailMapFromStrategicSector({
+                                strategicMap: stratMapData,
+                                center: { x: sector.position.x, y: sector.position.y },
+                                radius: detailMapRadius,
+                              });
+                              setSelectedDetailMap(dm);
+                            }
+                          }}
                           onMouseEnter={() => setStratHovered({ x: sector.position.x, y: sector.position.y })}
                           onMouseLeave={() => setStratHovered(null)}
                           title={`(${sector.position.x},${sector.position.y}) ${sector.baseTerrain || sector.terrain}${sector.features?.length ? ' [' + sector.features.join(',') + ']' : ''}${gen ? ` h=${gen.elevation.toFixed(2)} s=${gen.slope.toFixed(2)} m=${gen.moisture.toFixed(2)}` : ''}`}
@@ -2040,6 +2110,7 @@ export default function MapPreviewPage() {
                             height: `${cellSize}px`,
                             backgroundColor: bgColor,
                             position: 'relative',
+                            cursor: 'pointer',
                             ...(isRoad && stratDebugLayer === 'terrain' ? { boxShadow: 'inset 0 0 0 1px rgba(255,220,100,0.8)' } : {}),
                           }}
                         >
@@ -2096,6 +2167,167 @@ export default function MapPreviewPage() {
                 </>}
               </div>
             </div>
+
+            {/* Detail Map Preview */}
+            {stratMapData && genMode === 'strategic' && (
+              <div className="bg-gray-900/60 border border-white/10 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                  <h2 className="text-lg font-semibold text-white/90">🔍 详细地图预览</h2>
+                  <div className="flex gap-2 items-center">
+                    <span className="text-xs text-white/50">范围:</span>
+                    <button onClick={() => setDetailMapRadius(0)} className={`px-2 py-1 rounded text-xs cursor-pointer ${detailMapRadius === 0 ? 'bg-red-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}>
+                      1×1 (16×16)
+                    </button>
+                    <button onClick={() => setDetailMapRadius(1)} className={`px-2 py-1 rounded text-xs cursor-pointer ${detailMapRadius === 1 ? 'bg-red-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}>
+                      3×3 (48×48)
+                    </button>
+                    {selectedDetailMap && (
+                      <button onClick={() => setSelectedDetailMap(null)} className="px-2 py-1 rounded text-xs bg-gray-700 text-gray-400 hover:bg-gray-600 cursor-pointer">
+                        ✕ 关闭
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <p className="text-xs text-white/40 mb-3">点击上方战略地图中的任意格子查看详细地图</p>
+                {selectedDetailMap ? (
+                  <DetailMapPreview detailMap={selectedDetailMap} cellSize={selectedDetailMap.width > 20 ? 6 : 10} onTacticalMapGenerated={(tacticalMap, config) => { setTacticalMapPreview(tacticalMap); setTacticalConfig(config); }} />
+                ) : (
+                  <div className="text-center py-8 text-white/30 text-sm">👆 点击战略地图格子生成详细地图</div>
+                )}
+              </div>
+            )}
+
+            {/* Tactical Map Preview */}
+            {tacticalMapPreview && tacticalConfig && (
+              <div className="bg-gray-900/60 border border-white/10 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-lg font-semibold text-white/90">⚔️ 战术地图</h2>
+                  <div className="flex gap-2 items-center">
+                    <span className="text-xs text-yellow-300">{tacticalConfig.battleType}</span>
+                    <span className="text-xs text-white/50">{tacticalMapPreview.width}×{tacticalMapPreview.height}</span>
+                    <button onClick={() => { setTacticalMapPreview(null); setTacticalConfig(null); }} className="px-2 py-1 rounded text-xs bg-gray-700 text-gray-400 hover:bg-gray-600 cursor-pointer">
+                      ✕ 关闭
+                    </button>
+                  </div>
+                </div>
+                <div className="overflow-auto bg-black/30 rounded-lg p-2" style={{ maxHeight: '400px' }}>
+                  <div className="inline-grid" style={{
+                    gridTemplateColumns: `repeat(${tacticalMapPreview.width}, 16px)`,
+                    gridTemplateRows: `repeat(${tacticalMapPreview.height}, 16px)`,
+                    gap: '1px',
+                  }}>
+                    {tacticalMapPreview.cells.flat().map((cell, idx) => {
+                      const TACTICAL_COLORS: Record<string, string> = {
+                        plains: '#7cb342', forest: '#2e7d32', mountain: '#78909c', water: '#1565c0',
+                        city: '#8d6e63', road: '#9e9e9e', swamp: '#5d4037', bridge: '#d4a017',
+                        desert: '#fdd835', fortress: '#455a64',
+                      };
+                      const bgColor = TACTICAL_COLORS[cell.terrain] || '#333';
+                      return (
+                        <div key={idx} style={{
+                          width: '16px', height: '16px',
+                          backgroundColor: bgColor,
+                          borderRadius: '2px',
+                        }} title={`(${cell.position.x},${cell.position.z}) ${cell.terrain}${cell.features?.length ? ' [' + cell.features.join(',') + ']' : ''}`}>
+                          {cell.terrain === 'bridge' && <div className="w-full h-full flex items-center justify-center text-[8px] text-white">≋</div>}
+                          {cell.terrain === 'fortress' && <div className="w-full h-full flex items-center justify-center text-[8px] text-white">🏰</div>}
+                          {cell.terrain === 'city' && <div className="w-full h-full flex items-center justify-center text-[8px] text-white">■</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                {/* Tactical stats */}
+                <div className="mt-2 text-xs text-white/50 grid grid-cols-3 gap-2">
+                  {(() => {
+                    const counts: Record<string, number> = {};
+                    tacticalMapPreview.cells.flat().forEach(c => { counts[c.terrain] = (counts[c.terrain] || 0) + 1; });
+                    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, v]) => (
+                      <span key={k}>{k}: {v}</span>
+                    ));
+                  })()}
+                </div>
+              </div>
+            )}
+
+            {/* WorldMap Strategic Chunk View + Operation View */}
+            {worldMapData && genMode === 'strategic' && (
+              <div className="space-y-4">
+                <div className="bg-gray-900/60 border border-cyan-500/20 rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h2 className="text-lg font-semibold text-cyan-300/90">🌍 WorldMap 战略视图</h2>
+                    <div className="flex gap-2 text-xs text-white/50">
+                      <span>{worldMapData.width}×{worldMapData.height}</span>
+                      <span>🏙️ {worldMapData.cities.length} 城市</span>
+                      <span>🛣️ {worldMapData.roads.length} 道路</span>
+                      <span>🌊 {worldMapData.rivers.length} 河流</span>
+                    </div>
+                  </div>
+                  <StrategicChunkView
+                    worldMap={worldMapData}
+                    cellSize={12}
+                    selectedChunk={selectedWorldChunk}
+                    onChunkClick={(cx, cy) => {
+                      setSelectedWorldChunk({ x: cx, y: cy });
+                      const chunk = worldMapData.chunks[cy]?.[cx];
+                      if (!chunk) return;
+                      const rect = chunk.worldRect;
+                      let centerX = rect.x + rect.width / 2;
+                      let centerY = rect.y + rect.height / 2;
+                      let viewSize = 128;
+                      if (chunk.cityIds.length > 0) {
+                        const city = worldMapData.cities.find(c => c.id === chunk.cityIds[0]);
+                        if (city) {
+                          centerX = city.center.x;
+                          centerY = city.center.y;
+                          viewSize = city.rank === 'capital' ? 256 : 128;
+                        }
+                      }
+                      setOperationViewRect({
+                        x: Math.max(0, Math.floor(centerX - viewSize / 2)),
+                        y: Math.max(0, Math.floor(centerY - viewSize / 2)),
+                        width: viewSize,
+                        height: viewSize,
+                      });
+                    }}
+                  />
+                </div>
+
+                {/* Operation View */}
+                {operationViewRect && (
+                  <div className="bg-gray-900/60 border border-cyan-500/20 rounded-xl p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h2 className="text-lg font-semibold text-cyan-300/90">🔍 战役视图 ({operationViewRect.width}×{operationViewRect.height})</h2>
+                      <div className="flex gap-2">
+                        <button onClick={() => {
+                          const r = operationViewRect;
+                          setOperationViewRect({ ...r, width: Math.min(r.width * 2, worldMapData.width), height: Math.min(r.height * 2, worldMapData.height) });
+                        }} className="px-2 py-1 rounded text-xs bg-gray-700 text-gray-400 hover:bg-gray-600 cursor-pointer">
+                          放大区域
+                        </button>
+                        <button onClick={() => setOperationViewRect(null)} className="px-2 py-1 rounded text-xs bg-gray-700 text-gray-400 hover:bg-gray-600 cursor-pointer">
+                          ✕ 关闭
+                        </button>
+                      </div>
+                    </div>
+                    <div className="overflow-auto bg-black/20 rounded-lg p-2">
+                      <WorldMapCanvas
+                        worldMap={worldMapData}
+                        viewRect={operationViewRect}
+                        cellSize={4}
+                        onCellClick={(pos) => {
+                          const vp = getCombatViewport({ worldMap: worldMapData, center: pos, width: 64, height: 48 });
+                          const gameMap = convertCombatViewportToGameMap(vp);
+                          setTacticalMapPreview(gameMap);
+                          setTacticalConfig({ ...DEFAULT_TACTICAL_FROM_DETAIL_CONFIG, battleType: 'encounter', center: { x: pos.x, z: pos.y }, attackerDirection: 'west' });
+                        }}
+                      />
+                    </div>
+                    <p className="text-xs text-white/30 mt-2">点击地图区域生成战术战斗视口 (64×48)</p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

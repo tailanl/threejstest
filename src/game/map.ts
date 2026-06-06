@@ -3,6 +3,9 @@
 import { GameMap, MapCell, TerrainType, Position, MapType } from './types';
 import { MAP_WIDTH, MAP_HEIGHT, TERRAIN_WEIGHTS, TERRAIN_CONFIGS } from './config';
 import { generateProceduralMap } from './procedural-map';
+import { generateTacticalMapFromDetailMap } from './tactical-from-detail';
+import type { TacticalFromDetailConfig } from './tactical-from-detail';
+import type { DetailMap } from './detail-map-types';
 
 /** 创建空白地图（全部平原） */
 function createEmptyMap(): MapCell[][] {
@@ -496,6 +499,14 @@ export function generateMap(mapType: MapType = 'random'): GameMap {
     height: MAP_HEIGHT,
     cells,
   };
+}
+
+/** 从 DetailMap 生成战术地图 */
+export function generateMapFromDetail(
+  detailMap: DetailMap,
+  config: TacticalFromDetailConfig
+): GameMap {
+  return generateTacticalMapFromDetailMap({ detailMap, config });
 }
 
 /** 获取格子 */

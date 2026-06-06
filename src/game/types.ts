@@ -6,6 +6,22 @@ export type UnitType = 'tank' | 'ifv' | 'artillery' | 'scout' | 'infantry' | 'sa
 /** 地形类型 */
 export type TerrainType = 'plains' | 'forest' | 'mountain' | 'water' | 'city' | 'road' | 'swamp' | 'bridge' | 'desert' | 'fortress';
 
+export type TacticalFeatureType =
+  | 'river'
+  | 'stream'
+  | 'main_road'
+  | 'secondary_road'
+  | 'bridge'
+  | 'city_center'
+  | 'urban_block'
+  | 'suburb'
+  | 'industrial'
+  | 'forest_patch'
+  | 'hill'
+  | 'field'
+  | 'checkpoint'
+  | 'supply_point';
+
 /** 据点类型 */
 export type CapturePointType = 'stronghold' | 'bridgehead' | 'supply_base' | 'comm_hub';
 
@@ -128,6 +144,7 @@ export interface MapCell {
   minefieldOwner?: Faction;
   isRoad?: boolean;           // 标记为道路（用于细节图显示）
   roadType?: string;          // 道路类型名称
+  features?: TacticalFeatureType[];  // 详细地图特征
 }
 
 /** 游戏地图 */
