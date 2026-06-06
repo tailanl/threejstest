@@ -3,6 +3,8 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { generateProceduralMap, generateHierarchicalMap, getAvailableTemplates, generateFusedMap, saveFusedMap, listSavedMaps, generateEastAsiaStyleMap, generateEuropeStyleMap, saveRegionDetail, generateMegaMap, saveMegaMapChunk } from '@/game/procedural-map';
 import type { MegaMapResult } from '@/game/procedural-map';
+import { generateStrategicMap } from '@/game/strategic-map';
+import type { StrategicMap } from '@/game/strategic-types';
 import { TERRAIN_CONFIGS } from '@/game/config';
 import type { MapCell } from '@/game/types';
 
@@ -74,7 +76,7 @@ export default function MapPreviewPage() {
 
   const [hoveredCell, setHoveredCell] = useState<{ x: number; z: number; terrain: string } | null>(null);
 
-  const [genMode, setGenMode] = useState<'procedural' | 'hierarchical' | 'fused' | 'mega'>('procedural');
+  const [genMode, setGenMode] = useState<'procedural' | 'hierarchical' | 'fused' | 'mega' | 'strategic'>('procedural');
   const [hierPreview, setHierPreview] = useState<HierarchicalPreviewData>(() => ({
     seed: randomSeed(),
     macroWidth: 4,
@@ -101,6 +103,12 @@ export default function MapPreviewPage() {
   const [selectedMegaChunk, setSelectedMegaChunk] = useState<number | null>(null);
   const [isGeneratingMega, setIsGeneratingMega] = useState(false);
   const [megaConfig, setMegaConfig] = useState({ totalSize: 4096, gridDivisions: 32 });
+
+  const [stratMapData, setStratMapData] = useState<StrategicMap | null>(null);
+  const [isGeneratingStrat, setIsGeneratingStrat] = useState(false);
+  const [stratConfig, setStratConfig] = useState({ seed: 20260606, width: 64, height: 48, worldShape: 'peninsula' as const });
+  const [stratHovered, setStratHovered] = useState<{ x: number; y: number } | null>(null);
+  const [stratDebugLayer, setStratDebugLayer] = useState<'terrain' | 'elevation' | 'slope' | 'moisture' | 'cityScore' | 'roadCost' | 'chokepoint' | 'defense' | 'supply'>('terrain');
 
   const galleryThumbs = useMemo(() => {
     return gallerySeeds.map(seed => {
@@ -452,6 +460,16 @@ export default function MapPreviewPage() {
           >
             🌍 超大地图
           </button>
+          <button
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              genMode === 'strategic'
+                ? 'bg-red-600 text-white shadow-lg shadow-red-500/20'
+                : 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700'
+            }`}
+            onClick={() => setGenMode('strategic')}
+          >
+            ⚔️ 战略地图
+          </button>
         </div>
 
         {/* Controls Bar */}
@@ -773,6 +791,54 @@ export default function MapPreviewPage() {
                 </div>
               )}
             </div>
+          ) : genMode === 'strategic' ? (
+            <div className="space-y-3">
+              <div className="flex gap-3 items-center flex-wrap">
+                <label className="text-red-300/70 text-xs w-12">种子</label>
+                <input type="number" value={stratConfig.seed} onChange={e => setStratConfig(p => ({...p, seed: Number(e.target.value)}))} className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-sm w-24" />
+
+                <label className="text-red-300/70 text-xs w-12 ml-2">大小</label>
+                <select value={`${stratConfig.width}x${stratConfig.height}`} onChange={e => {
+                  const [w, h] = e.target.value.split('x').map(Number);
+                  setStratConfig(p => ({...p, width: w, height: h}));
+                }} className="bg-gray-800 text-white rounded px-2 py-1 border border-red-500/30 text-xs cursor-pointer">
+                  <option value="32x24">32×24</option>
+                  <option value="48x36">48×36</option>
+                  <option value="64x48">64×48</option>
+                  <option value="96x72">96×72</option>
+                  <option value="128x96">128×96</option>
+                </select>
+
+                <label className="text-red-300/70 text-xs w-12 ml-2">形状</label>
+                <select value={stratConfig.worldShape} onChange={e => setStratConfig(p => ({...p, worldShape: e.target.value as any}))} className="bg-gray-800 text-white rounded px-2 py-1 border border-red-500/30 text-xs cursor-pointer">
+                  <option value="peninsula">半岛</option>
+                  <option value="continent">大陆</option>
+                  <option value="island">岛屿</option>
+                  <option value="inland">内陆</option>
+                  <option value="river_basin">流域</option>
+                </select>
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <button onClick={() => {
+                  setIsGeneratingStrat(true);
+                  setTimeout(() => {
+                    try {
+                      const map = generateStrategicMap({ seed: stratConfig.seed, width: stratConfig.width, height: stratConfig.height, worldShape: stratConfig.worldShape });
+                      setStratMapData(map);
+                    } catch (err) { console.error(err); }
+                    setIsGeneratingStrat(false);
+                  }, 50);
+                }} disabled={isGeneratingStrat} className={`flex-1 bg-gradient-to-r text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-lg transition-all cursor-pointer ${isGeneratingStrat ? 'from-gray-600 to-gray-500 cursor-wait' : 'from-red-700 to-orange-600 hover:from-red-600 hover:to-orange-500 shadow-red-500/30'}`}>
+                  {isGeneratingStrat ? '⏳ 生成中...' : `⚔️ 生成战略地图 (${stratConfig.width}×${stratConfig.height})`}
+                </button>
+                {stratMapData && (
+                  <button onClick={() => setStratMapData(null)} className="px-4 py-2.5 bg-gray-700 text-white rounded-lg text-sm font-medium hover:bg-gray-600 transition-colors cursor-pointer">
+                    🗑️ 清除
+                  </button>
+                )}
+              </div>
+            </div>
           ) : null}
         </div>
 
@@ -782,7 +848,7 @@ export default function MapPreviewPage() {
             <div className="text-4xl mb-4">🗺️</div>
             <div className="text-xl text-gray-400 mb-2">调整参数后点击"生成地图"按钮开始</div>
             <div className="text-sm text-gray-500">
-              当前模式: {genMode === 'procedural' ? '🌬️ 程序化地形' : genMode === 'hierarchical' ? '🧩 分层模板' : genMode === 'fused' ? '🌏 融合战略' : '🌍 超大地图'}
+              当前模式: {genMode === 'procedural' ? '🌬️ 程序化地形' : genMode === 'hierarchical' ? '🧩 分层模板' : genMode === 'fused' ? '🌏 融合战略' : genMode === 'mega' ? '🌍 超大地图' : '⚔️ 战略地图'}
             </div>
           </div>
         )}
@@ -1889,6 +1955,143 @@ export default function MapPreviewPage() {
                 </div>
               );
             })()}
+          </div>
+        )}
+
+        {/* Strategic Map Display */}
+        {stratMapData && genMode === 'strategic' && (
+          <div className="space-y-4">
+            <div className="bg-gray-900/60 border border-white/10 rounded-xl p-4">
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <h2 className="text-lg font-semibold text-white/90">⚔️ 战略地图 ({stratMapData.width}×{stratMapData.height})</h2>
+                <div className="flex gap-2 text-xs text-white/50">
+                  <span>🏙️ {stratMapData.sectors.flat().filter(s => s.features?.includes('city') || s.features?.includes('capital')).length} 城市</span>
+                  <span>🌉 {stratMapData.sectors.flat().filter(s => s.features?.includes('bridge')).length} 桥梁</span>
+                  <span>🏰 {stratMapData.sectors.flat().filter(s => s.features?.includes('fortress')).length} 要塞</span>
+                  <span>✈️ {stratMapData.sectors.flat().filter(s => s.features?.includes('airfield')).length} 机场</span>
+                  <span>⚓ {stratMapData.sectors.flat().filter(s => s.features?.includes('port')).length} 港口</span>
+                </div>
+              </div>
+
+              {/* Debug layer selector */}
+              <div className="flex gap-1.5 mb-3 flex-wrap">
+                {(['terrain','elevation','slope','moisture','cityScore','roadCost','chokepoint','defense','supply'] as const).map(layer => (
+                  <button key={layer} onClick={() => setStratDebugLayer(layer)}
+                    className={`px-2 py-1 rounded text-xs cursor-pointer ${stratDebugLayer === layer ? 'bg-red-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}>
+                    {layer === 'terrain' ? '地形' : layer === 'elevation' ? '高度' : layer === 'slope' ? '坡度' : layer === 'moisture' ? '湿度' : layer === 'cityScore' ? '城市分' : layer === 'roadCost' ? '道路费' : layer === 'chokepoint' ? '咽喉' : layer === 'defense' ? '防御' : '补给'}
+                  </button>
+                ))}
+              </div>
+
+              {/* Map grid */}
+              <div className="overflow-auto flex justify-center py-2 bg-black/20 rounded-lg">
+                <div className="relative inline-block">
+                  <div className="grid gap-[0px]" style={{
+                    gridTemplateColumns: `repeat(${stratMapData.width}, ${Math.max(6, Math.min(14, Math.floor((window?.innerWidth ?? 800) * 0.7 / stratMapData.width)))}px)`
+                  }}>
+                    {stratMapData.sectors.flat().map((sector, idx) => {
+                      const cellSize = Math.max(6, Math.min(14, Math.floor((window?.innerWidth ?? 800) * 0.7 / stratMapData.width)));
+                      let bgColor = '#333';
+                      const gen = sector.gen;
+
+                      if (stratDebugLayer === 'terrain') {
+                        const terrainColors: Record<string, string> = {
+                          plains: '#7cb342', forest: '#2e7d32', mountain: '#78909c', water: '#1565c0',
+                          desert: '#fdd835', marshland: '#5d4037', highland: '#546e7a', city: '#8d6e63',
+                        };
+                        bgColor = terrainColors[sector.baseTerrain || sector.terrain] || '#333';
+                        // River overlay
+                        if (sector.features?.includes('river') && sector.baseTerrain !== 'water') {
+                          bgColor = '#2196f3';
+                        }
+                      } else if (gen) {
+                        const val = stratDebugLayer === 'elevation' ? gen.elevation :
+                          stratDebugLayer === 'slope' ? gen.slope :
+                          stratDebugLayer === 'moisture' ? gen.moisture :
+                          stratDebugLayer === 'cityScore' ? Math.max(0, gen.cityScore / 100) :
+                          stratDebugLayer === 'roadCost' ? Math.min(1, gen.roadCost / 20) :
+                          stratDebugLayer === 'chokepoint' ? gen.chokepointValue :
+                          stratDebugLayer === 'defense' ? gen.defensiveValue :
+                          gen.supplyValue / 100;
+                        const clamped = Math.max(0, Math.min(1, val));
+                        const r = Math.floor(clamped * 255);
+                        const b = Math.floor((1 - clamped) * 255);
+                        bgColor = `rgb(${r},${Math.floor(clamped * 80)},${b})`;
+                      }
+
+                      const isCity = sector.features?.includes('city') || sector.features?.includes('capital');
+                      const isRoad = sector.features?.includes('main_road') || sector.features?.includes('secondary_road');
+                      const isBridge = sector.features?.includes('bridge');
+                      const isFortress = sector.features?.includes('fortress');
+                      const isPort = sector.features?.includes('port');
+                      const isAirfield = sector.features?.includes('airfield');
+
+                      return (
+                        <div key={idx}
+                          onMouseEnter={() => setStratHovered({ x: sector.position.x, y: sector.position.y })}
+                          onMouseLeave={() => setStratHovered(null)}
+                          title={`(${sector.position.x},${sector.position.y}) ${sector.baseTerrain || sector.terrain}${sector.features?.length ? ' [' + sector.features.join(',') + ']' : ''}${gen ? ` h=${gen.elevation.toFixed(2)} s=${gen.slope.toFixed(2)} m=${gen.moisture.toFixed(2)}` : ''}`}
+                          style={{
+                            width: `${cellSize}px`,
+                            height: `${cellSize}px`,
+                            backgroundColor: bgColor,
+                            position: 'relative',
+                            ...(isRoad && stratDebugLayer === 'terrain' ? { boxShadow: 'inset 0 0 0 1px rgba(255,220,100,0.8)' } : {}),
+                          }}
+                        >
+                          {isCity && stratDebugLayer === 'terrain' && (
+                            <div className="absolute inset-0 flex items-center justify-center text-[6px] font-bold text-yellow-300 leading-none">
+                              {sector.features?.includes('capital') ? '★' : '●'}
+                            </div>
+                          )}
+                          {isFortress && stratDebugLayer === 'terrain' && (
+                            <div className="absolute inset-0 flex items-center justify-center text-[6px] text-red-300 leading-none">◆</div>
+                          )}
+                          {isPort && stratDebugLayer === 'terrain' && (
+                            <div className="absolute inset-0 flex items-center justify-center text-[6px] text-cyan-300 leading-none">⚓</div>
+                          )}
+                          {isAirfield && stratDebugLayer === 'terrain' && (
+                            <div className="absolute inset-0 flex items-center justify-center text-[6px] text-white leading-none">✈</div>
+                          )}
+                          {isBridge && stratDebugLayer === 'terrain' && (
+                            <div className="absolute inset-0 flex items-center justify-center text-[6px] text-amber-200 leading-none">≋</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Hover info */}
+              {stratHovered && (() => {
+                const s = stratMapData.sectors[stratHovered.y]?.[stratHovered.x];
+                if (!s) return null;
+                return (
+                  <div className="mt-3 bg-black/30 rounded-lg p-3 text-xs text-white/70 grid grid-cols-2 md:grid-cols-4 gap-2">
+                    <div>📍 ({s.position.x},{s.position.y}) <span className="text-white/90">{s.name}</span></div>
+                    <div>🏔️ {s.baseTerrain || s.terrain} {s.features?.length ? `[${s.features.join(',')}]` : ''}</div>
+                    {s.gen && <>
+                      <div>📏 h={s.gen.elevation.toFixed(3)} s={s.gen.slope.toFixed(3)} m={s.gen.moisture.toFixed(3)} t={s.gen.temperature.toFixed(2)}</div>
+                      <div>🎯 city={s.gen.cityScore.toFixed(0)} road={s.gen.roadCost.toFixed(1)} choke={s.gen.chokepointValue.toFixed(2)} def={s.gen.defensiveValue.toFixed(2)} sup={s.gen.supplyValue.toFixed(0)}</div>
+                    </>}
+                  </div>
+                );
+              })()}
+
+              {/* Legend */}
+              <div className="mt-3 flex flex-wrap gap-2 text-xs text-white/60">
+                {stratDebugLayer === 'terrain' && <>
+                  {Object.entries({ plains:'平原', forest:'森林', mountain:'山地', water:'水域', desert:'沙漠', marshland:'沼泽', highland:'高地', city:'城市' }).map(([k,v]) => {
+                    const colors: Record<string,string> = { plains:'#7cb342', forest:'#2e7d32', mountain:'#78909c', water:'#1565c0', desert:'#fdd835', marshland:'#5d4037', highland:'#546e7a', city:'#8d6e63' };
+                    return <span key={k} className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm inline-block" style={{backgroundColor:colors[k]}}></span>{v}</span>;
+                  })}
+                  <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm inline-block bg-[#2196f3]"></span>河流</span>
+                  <span className="flex items-center gap-1"><span className="text-yellow-300">●</span>城市 <span className="text-yellow-300">★</span>首都</span>
+                  <span className="flex items-center gap-1"><span className="text-red-300">◆</span>要塞 <span className="text-cyan-300">⚓</span>港口 <span className="text-white">✈</span>机场</span>
+                </>}
+              </div>
+            </div>
           </div>
         )}
 

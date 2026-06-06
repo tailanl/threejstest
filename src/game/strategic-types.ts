@@ -37,13 +37,38 @@ export interface StrategicForce {
   templateKey?: string; // Force template type key (e.g. 'armor', 'mech_inf')
 }
 
+/** Strategic base terrain type for map generation */
+export type StrategicBaseTerrainType = 'plains' | 'forest' | 'mountain' | 'water' | 'desert' | 'marshland' | 'highland';
+
+/** Strategic feature type for map generation */
+export type StrategicFeatureType = 'river' | 'main_road' | 'secondary_road' | 'bridge' | 'city' | 'capital' | 'port' | 'fortress' | 'airfield' | 'supply_depot' | 'rail';
+
+/** City rank for strategic map generation */
+export type CityRank = 'capital' | 'major' | 'regional' | 'town';
+
 /** Strategic sector - one cell of the strategic map */
 export interface StrategicSector {
   position: StrategicPosition;
-  terrain: StrategicTerrainType;
+  terrain: StrategicTerrainType; // keep for backward compat
   force: StrategicForce | null;
   tacticalMapSeed: number; // Seed for generating the tactical minimap
   name: string; // e.g. "首尔", "铁原", "春川"
+  // NEW fields (all optional for backward compatibility):
+  baseTerrain?: StrategicBaseTerrainType;
+  features?: StrategicFeatureType[];
+  gen?: {
+    elevation: number;
+    slope: number;
+    moisture: number;
+    temperature: number;
+    cityScore: number;
+    roadCost: number;
+    supplyValue: number;
+    defensiveValue: number;
+    chokepointValue: number;
+    riverWidth?: number;
+    cityRank?: CityRank;
+  };
 }
 
 /** Strategic map */
