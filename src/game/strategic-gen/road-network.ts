@@ -123,55 +123,98 @@ export function buildRoadNetwork(ctx: StrategicGenContext, config: StrategicGenC
   const { cities } = ctx;
   if (cities.length < 2) return;
 
-  // Compute all city pair distances
-  const edges: Array<{ i: number; j: number; dist: number; importance: number }> = [];
+  const capital = cities.filter(c => c.rank === 'capital');
+  const majors = cities.filter(c => c.rank === 'major');
+  const regionals = cities.filter(c => c.rank === 'regional');
+  const towns = cities.filter(c => c.rank === 'town');
+
+  const roadPairs: Array<{ from: CityNode; to: CityNode; priority: number }> = [];
+
+  // Rule 1: capital connects to all majors
+  for (const cap of capital) {
+    for (const maj of majors) {
+      roadPairs.push({ from: cap, to: maj, priority: 100 });
+    }
+  }
+
+  // Rule 2: majors are interconnected (MST among majors)
+  const majorEdges: Array<{ i: number; j: number; dist: number }> = [];
+  for (let i = 0; i < majors.length; i++) {
+    for (let j = i + 1; j < majors.length; j++) {
+      majorEdges.push({ i, j, dist: diagonalDistance(majors[i].position, majors[j].position) });
+    }
+  }
+  majorEdges.sort((a, b) => a.dist - b.dist);
+  const ufMajor = new UnionFind(majors.length);
+  for (const e of majorEdges) {
+    if (ufMajor.union(e.i, e.j)) {
+      roadPairs.push({ from: majors[e.i], to: majors[e.j], priority: 80 });
+    }
+  }
+
+  // Rule 3: each regional connects to nearest major
+  for (const reg of regionals) {
+    let nearestMajor: CityNode | null = null;
+    let nearestDist = Infinity;
+    for (const maj of majors) {
+      const d = diagonalDistance(reg.position, maj.position);
+      if (d < nearestDist) { nearestDist = d; nearestMajor = maj; }
+    }
+    if (nearestMajor) {
+      roadPairs.push({ from: reg, to: nearestMajor, priority: 60 });
+    }
+  }
+
+  // Rule 4: each town connects to nearest regional or major
+  for (const town of towns) {
+    let nearest: CityNode | null = null;
+    let nearestDist = Infinity;
+    // Prefer regional first
+    for (const reg of regionals) {
+      const d = diagonalDistance(town.position, reg.position);
+      if (d < nearestDist) { nearestDist = d; nearest = reg; }
+    }
+    for (const maj of majors) {
+      const d = diagonalDistance(town.position, maj.position);
+      if (d < nearestDist) { nearestDist = d; nearest = maj; }
+    }
+    if (nearest) {
+      roadPairs.push({ from: town, to: nearest, priority: 40 });
+    }
+  }
+
+  // Extra edges for redundancy
+  const allCityPairs: Array<{ from: CityNode; to: CityNode; dist: number }> = [];
   for (let i = 0; i < cities.length; i++) {
     for (let j = i + 1; j < cities.length; j++) {
-      const d = diagonalDistance(cities[i].position, cities[j].position);
-      const imp = cityImportance(cities[i]) + cityImportance(cities[j]);
-      edges.push({ i, j, dist: d, importance: imp });
+      allCityPairs.push({ from: cities[i], to: cities[j], dist: diagonalDistance(cities[i].position, cities[j].position) });
     }
   }
-  edges.sort((a, b) => a.dist - b.dist);
+  allCityPairs.sort((a, b) => a.dist - b.dist);
 
-  // MST
-  const uf = new UnionFind(cities.length);
-  const mstEdges: typeof edges = [];
-  for (const e of edges) {
-    if (uf.union(e.i, e.j)) {
-      mstEdges.push(e);
-      if (mstEdges.length >= cities.length - 1) break;
+  const existingPairs = new Set(roadPairs.map(p => `${p.from.id}-${p.to.id}`));
+  for (const pair of allCityPairs) {
+    if (existingPairs.has(`${pair.from.id}-${pair.to.id}`) || existingPairs.has(`${pair.to.id}-${pair.from.id}`)) continue;
+    const shortBonus = pair.dist < (ctx.width + ctx.height) / 4 ? 1.5 : 1;
+    if (ctx.rng.next() < config.roads.extraRoadRatio * shortBonus * 0.3) {
+      roadPairs.push({ from: pair.from, to: pair.to, priority: 20 });
     }
+    if (roadPairs.length >= cities.length * (1 + config.roads.extraRoadRatio)) break;
   }
 
-  // Extra edges
-  const targetEdges = Math.floor(cities.length * (1 + config.roads.extraRoadRatio));
-  const extraEdges: typeof edges = [];
-  for (const e of edges) {
-    if (mstEdges.includes(e)) continue;
-    const shortBonus = e.dist < (ctx.width + ctx.height) / 4 ? 1.5 : 1;
-    if (ctx.rng.next() < config.roads.extraRoadRatio * shortBonus * 0.5) {
-      extraEdges.push(e);
-    }
-    if (mstEdges.length + extraEdges.length >= targetEdges) break;
-  }
-
-  const allEdges = [...mstEdges, ...extraEdges];
+  // Build roads via A*
   let roadId = 0;
-
-  for (const e of allEdges) {
-    const from = cities[e.i];
-    const to = cities[e.j];
-    const isMain = from.rank !== 'town' && to.rank !== 'town' && e.dist > (ctx.width + ctx.height) / 8;
+  for (const pair of roadPairs) {
+    const isMain = pair.priority >= 60;
     const roadType: 'main' | 'secondary' = isMain ? 'main' : 'secondary';
 
-    const result = aStarRoad(from.position, to.position, ctx);
+    const result = aStarRoad(pair.from.position, pair.to.position, ctx);
     if (result.path.length < 2) continue;
 
     const road: RoadEdge = {
       id: `road_${++roadId}`,
-      fromCityId: from.id,
-      toCityId: to.id,
+      fromCityId: pair.from.id,
+      toCityId: pair.to.id,
       path: result.path,
       roadType,
     };

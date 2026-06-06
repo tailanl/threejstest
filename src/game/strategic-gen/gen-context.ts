@@ -19,6 +19,7 @@ export interface CityNode {
   name: string;
   position: GenPosition;
   rank: CityRank;
+  radius: number;
   populationScore: number;
   supplyValue: number;
   victoryPointValue: number;

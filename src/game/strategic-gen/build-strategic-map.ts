@@ -5,9 +5,10 @@ function computeDisplayTerrain(
   baseTerrain: StrategicBaseTerrainType,
   features: Set<StrategicFeatureType>
 ): StrategicTerrainType {
-  if (features.has('capital')) return 'city';
-  if (features.has('city')) return 'city';
-  if (features.has('river') && baseTerrain !== 'water') return 'water';
+  // City feature takes display priority
+  if (features.has('capital') || features.has('city')) return 'city';
+  // River does NOT override terrain display - it's a feature overlay
+  // Water base terrain stays water
   return baseTerrain;
 }
 

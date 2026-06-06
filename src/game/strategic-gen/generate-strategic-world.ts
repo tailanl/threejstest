@@ -17,6 +17,30 @@ import { validateAndRepairStrategicWorld, printStrategicWorldStats } from './val
 import { buildStrategicMap } from './build-strategic-map';
 import { StrategicMap } from '../strategic-types';
 
+function enforceDesertRatio(ctx: StrategicGenContext, maxRatio: number): void {
+  const total = ctx.width * ctx.height;
+  let desertCount = 0;
+  for (let y = 0; y < ctx.height; y++) {
+    for (let x = 0; x < ctx.width; x++) {
+      if (ctx.baseTerrain[y][x] === 'desert') desertCount++;
+    }
+  }
+  const desertRatio = desertCount / total;
+  if (desertRatio <= maxRatio) return;
+
+  // Convert excess desert to plains or forest
+  const toRemove = desertCount - Math.floor(total * maxRatio);
+  let removed = 0;
+  for (let y = 0; y < ctx.height && removed < toRemove; y++) {
+    for (let x = 0; x < ctx.width && removed < toRemove; x++) {
+      if (ctx.baseTerrain[y][x] === 'desert') {
+        ctx.baseTerrain[y][x] = ctx.moisture[y][x] > 0.4 ? 'forest' : 'plains';
+        removed++;
+      }
+    }
+  }
+}
+
 export function generateStrategicWorld(config: StrategicGenConfig): StrategicMap {
   const ctx = createStrategicGenContext(config);
 
@@ -38,8 +62,11 @@ export function generateStrategicWorld(config: StrategicGenConfig): StrategicMap
   ctx.temperature = computeTemperature(ctx);
 
   // 3. 自然地形
-  ctx.baseTerrain = classifyBaseTerrains(ctx);
+  ctx.baseTerrain = classifyBaseTerrains(ctx, config);
   smoothBaseTerrain(ctx, 3);
+
+  // 3b. 沙漠比例限制
+  enforceDesertRatio(ctx, config.desertControl.maxRatio);
 
   // 4. 战略评价层
   ctx.chokepointValue = computeChokepointValue(ctx);

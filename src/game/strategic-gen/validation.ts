@@ -131,27 +131,85 @@ export function validateAndRepairStrategicWorld(ctx: StrategicGenContext): void 
 }
 
 export function printStrategicWorldStats(ctx: StrategicGenContext): void {
+  const total = ctx.width * ctx.height;
   const terrainCounts: Record<string, number> = {};
   const featureCounts: Record<string, number> = {};
   let riverCells = 0;
   let bridgeCount = 0;
+  let cityTileCount = 0;
 
   forEachCell(ctx.width, ctx.height, (x, y) => {
     const bt = ctx.baseTerrain[y][x];
     terrainCounts[bt] = (terrainCounts[bt] || 0) + 1;
     if (ctx.riverLayer[y][x].isRiver) riverCells++;
+    const isCity = ctx.features[y][x].has('city') || ctx.features[y][x].has('capital');
+    if (isCity) cityTileCount++;
     for (const f of ctx.features[y][x]) {
       featureCounts[f] = (featureCounts[f] || 0) + 1;
       if (f === 'bridge') bridgeCount++;
     }
   });
 
+  // City area stats
+  const capitalTiles = ctx.cities.filter(c => c.rank === 'capital')
+    .reduce((sum, c) => sum + Math.PI * c.radius * c.radius, 0);
+  const majorTiles = ctx.cities.filter(c => c.rank === 'major');
+  const majorAvgTiles = majorTiles.length > 0
+    ? majorTiles.reduce((sum, c) => sum + Math.PI * c.radius * c.radius, 0) / majorTiles.length
+    : 0;
+
+  const desertRatio = (terrainCounts['desert'] || 0) / total;
+
   console.log('=== Strategic World Stats ===');
-  console.log(`Size: ${ctx.width}x${ctx.height}`);
+  console.log(`Size: ${ctx.width}x${ctx.height} (${total} cells)`);
   console.log(`Cities: ${ctx.cities.length} (capital: ${ctx.cities.filter(c => c.rank === 'capital').length}, major: ${ctx.cities.filter(c => c.rank === 'major').length}, regional: ${ctx.cities.filter(c => c.rank === 'regional').length}, town: ${ctx.cities.filter(c => c.rank === 'town').length})`);
   console.log(`Roads: ${ctx.roads.length}`);
   console.log(`Bridges: ${bridgeCount}`);
   console.log(`River cells: ${riverCells}`);
-  console.log(`Terrain:`, terrainCounts);
+  console.log(`City tile count: ${cityTileCount}`);
+  console.log(`Capital tile count: ~${Math.round(capitalTiles)}`);
+  console.log(`Major avg tile count: ~${Math.round(majorAvgTiles)}`);
+  console.log(`Terrain:`, Object.fromEntries(Object.entries(terrainCounts).map(([k, v]) => [k, `${v} (${(v / total * 100).toFixed(1)}%)`])));
   console.log(`Features:`, featureCounts);
+
+  // Warnings
+  if (desertRatio > 0.06) {
+    console.warn(`⚠️ WARNING: desertRatio = ${(desertRatio * 100).toFixed(1)}% > 6%`);
+  }
+
+  // Validation summary
+  const capitalOnWater = ctx.cities.filter(c => c.rank === 'capital').some(c => ctx.waterMask[c.position.y][c.position.x]);
+  const capitalOnMountain = ctx.cities.filter(c => c.rank === 'capital').some(c => ctx.baseTerrain[c.position.y][c.position.x] === 'mountain');
+  const majorOnWater = ctx.cities.filter(c => c.rank === 'major').some(c => ctx.waterMask[c.position.y][c.position.x]);
+
+  console.log(`\n=== Validation ===`);
+  console.log(`desertRatio: ${(desertRatio * 100).toFixed(1)}% ${desertRatio <= 0.04 ? '✅' : desertRatio <= 0.06 ? '⚠️' : '❌'}`);
+  console.log(`cityTileCount: ${cityTileCount} ${cityTileCount >= 60 ? '✅' : '❌'}`);
+  console.log(`capitalTileCount: ~${Math.round(capitalTiles)} ${capitalTiles >= 25 ? '✅' : '❌'}`);
+  console.log(`majorAvgTileCount: ~${Math.round(majorAvgTiles)} ${majorAvgTiles >= 9 ? '✅' : '❌'}`);
+  console.log(`Capital on water: ${capitalOnWater ? '❌' : '✅'}`);
+  console.log(`Capital on mountain: ${capitalOnMountain ? '❌' : '✅'}`);
+  console.log(`Major on water: ${majorOnWater ? '❌' : '✅'}`);
+
+  // Check capital-major road connectivity
+  const capitalIds = new Set(ctx.cities.filter(c => c.rank === 'capital').map(c => c.id));
+  const majorIds = new Set(ctx.cities.filter(c => c.rank === 'major').map(c => c.id));
+  const connectedToCapital = new Set<string>();
+  for (const road of ctx.roads) {
+    if (capitalIds.has(road.fromCityId)) connectedToCapital.add(road.toCityId);
+    if (capitalIds.has(road.toCityId)) connectedToCapital.add(road.fromCityId);
+  }
+  const allMajorsConnected = [...majorIds].every(id => connectedToCapital.has(id));
+  console.log(`Capital-Major road connected: ${allMajorsConnected ? '✅' : '❌'}`);
+
+  // Check bridges are valid (road + river)
+  let invalidBridges = 0;
+  forEachCell(ctx.width, ctx.height, (x, y) => {
+    if (ctx.features[y][x].has('bridge')) {
+      const hasRoad = ctx.features[y][x].has('main_road') || ctx.features[y][x].has('secondary_road');
+      const hasRiver = ctx.riverLayer[y][x].isRiver;
+      if (!hasRoad || !hasRiver) invalidBridges++;
+    }
+  });
+  console.log(`Bridges all valid: ${invalidBridges === 0 ? '✅' : `❌ (${invalidBridges} invalid)`}`);
 }

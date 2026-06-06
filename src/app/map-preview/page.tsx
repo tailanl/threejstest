@@ -2000,9 +2000,13 @@ export default function MapPreviewPage() {
                           desert: '#fdd835', marshland: '#5d4037', highland: '#546e7a', city: '#8d6e63',
                         };
                         bgColor = terrainColors[sector.baseTerrain || sector.terrain] || '#333';
-                        // River overlay
+                        // River: semi-transparent blue overlay on top of terrain color
                         if (sector.features?.includes('river') && sector.baseTerrain !== 'water') {
-                          bgColor = '#2196f3';
+                          // Blend with blue
+                          const r = parseInt(bgColor.slice(1,3), 16);
+                          const g = parseInt(bgColor.slice(3,5), 16);
+                          const b = parseInt(bgColor.slice(5,7), 16);
+                          bgColor = `rgb(${Math.floor(r*0.4+33*0.6)},${Math.floor(g*0.4+150*0.6)},${Math.floor(b*0.4+243*0.6)})`;
                         }
                       } else if (gen) {
                         const val = stratDebugLayer === 'elevation' ? gen.elevation :

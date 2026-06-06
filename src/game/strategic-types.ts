@@ -41,7 +41,7 @@ export interface StrategicForce {
 export type StrategicBaseTerrainType = 'plains' | 'forest' | 'mountain' | 'water' | 'desert' | 'marshland' | 'highland';
 
 /** Strategic feature type for map generation */
-export type StrategicFeatureType = 'river' | 'main_road' | 'secondary_road' | 'bridge' | 'city' | 'capital' | 'port' | 'fortress' | 'airfield' | 'supply_depot' | 'rail';
+export type StrategicFeatureType = 'river' | 'main_road' | 'secondary_road' | 'bridge' | 'city' | 'city_center' | 'capital' | 'port' | 'fortress' | 'airfield' | 'supply_depot' | 'rail';
 
 /** City rank for strategic map generation */
 export type CityRank = 'capital' | 'major' | 'regional' | 'town';

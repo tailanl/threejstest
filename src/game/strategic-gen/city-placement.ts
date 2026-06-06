@@ -1,6 +1,6 @@
 import { StrategicGenContext, GenPosition, CityNode, forEachCell, distance } from './gen-context';
 import { StrategicGenConfig } from './strategic-gen-config';
-import { CityRank } from '../strategic-types';
+import { CityRank, StrategicBaseTerrainType } from '../strategic-types';
 
 const CITY_NAMES = [
   '铁原', '春川', '原州', '大田', '清州', '全州', '光州', '大邱', '釜山', '仁川',
@@ -18,6 +18,70 @@ function cityImportance(rank: CityRank): number {
     case 'major': return 70;
     case 'regional': return 35;
     case 'town': return 12;
+  }
+}
+
+function getCityRadius(rank: CityRank, rng: () => number): number {
+  switch (rank) {
+    case 'capital': return 3 + (rng() > 0.5 ? 1 : 0);
+    case 'major': return 2 + (rng() > 0.5 ? 1 : 0);
+    case 'regional': return 1 + (rng() > 0.5 ? 1 : 0);
+    case 'town': return 1;
+  }
+}
+
+function paintCityArea(city: CityNode, ctx: StrategicGenContext): void {
+  const { x: cx, y: cz } = city.position;
+  const radius = city.radius;
+
+  for (let dy = -radius; dy <= radius; dy++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      const nx = cx + dx;
+      const ny = cz + dy;
+      if (nx < 0 || nx >= ctx.width || ny < 0 || ny >= ctx.height) continue;
+
+      if (ctx.waterMask[ny][nx]) continue;
+      if (ctx.baseTerrain[ny][nx] === 'mountain' && city.rank !== 'capital') continue;
+
+      const d = Math.sqrt(dx * dx + dy * dy);
+      const noise = ctx.rng.next() * 0.45;
+
+      const threshold =
+        city.rank === 'capital' ? radius + 0.25 :
+        city.rank === 'major' ? radius :
+        city.rank === 'regional' ? radius - 0.15 :
+        radius - 0.35;
+
+      if (d <= threshold + noise) {
+        ctx.baseTerrain[ny][nx] = 'plains'; // city area clears terrain
+        ctx.features[ny][nx].add('city');
+        if (dx === 0 && dy === 0) {
+          ctx.features[ny][nx].add('city_center');
+        }
+        if (city.rank === 'capital' && d <= 1) {
+          ctx.features[ny][nx].add('capital');
+        }
+      }
+    }
+  }
+
+  // City outskirts: clean up surrounding terrain
+  for (let dy = -(radius + 2); dy <= radius + 2; dy++) {
+    for (let dx = -(radius + 2); dx <= radius + 2; dx++) {
+      const nx = cx + dx;
+      const ny = cz + dy;
+      if (nx < 0 || nx >= ctx.width || ny < 0 || ny >= ctx.height) continue;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d > radius + 2 || d <= radius) continue;
+
+      const bt = ctx.baseTerrain[ny][nx];
+      // Desert near city → plains
+      if (bt === 'desert') ctx.baseTerrain[ny][nx] = 'plains';
+      // Some marshland near city → plains
+      if (bt === 'marshland' && ctx.rng.next() > 0.4) ctx.baseTerrain[ny][nx] = 'plains';
+      // Don't let city be completely surrounded by forest
+      if (bt === 'forest' && ctx.rng.next() > 0.6) ctx.baseTerrain[ny][nx] = 'plains';
+    }
   }
 }
 
@@ -81,14 +145,14 @@ function placeCityRank(
       name: CITY_NAMES[cityNameIdx++ % CITY_NAMES.length],
       position: { x: bestX, y: bestY },
       rank,
+      radius: getCityRadius(rank, () => ctx.rng.next()),
       populationScore: cityImportance(rank),
       supplyValue: rank === 'capital' ? 100 : rank === 'major' ? 70 : rank === 'regional' ? 40 : 18,
       victoryPointValue: cityImportance(rank),
     };
 
     ctx.cities.push(city);
-    ctx.features[bestY][bestX].add('city');
-    if (rank === 'capital') ctx.features[bestY][bestX].add('capital');
+    paintCityArea(city, ctx);
     ctx.supplyValue[bestY][bestX] += city.supplyValue;
 
     applyCityDistancePenalty(ctx.cityScore, city.position, penaltyRadius, penaltyStrength, ctx.width, ctx.height);

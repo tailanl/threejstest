@@ -28,11 +28,14 @@ function getRoadCostAt(x: number, y: number, ctx: StrategicGenContext): number {
     case 'forest': cost += 5; break;
     case 'desert': cost += 5; break;
     case 'marshland': cost += 10; break;
-    case 'mountain': cost += 18; break;
+    case 'mountain': cost += 12; break;
     case 'water': cost += 999; break;
   }
 
   cost += ctx.slope[y][x] * 45;
+
+  // City cells: very cheap for roads to pass through
+  if (ctx.features[y][x].has('city')) cost = 0.5;
 
   const distRiver = distanceToRiver(x, y, ctx);
   if (distRiver > 0 && distRiver <= 2) cost -= 1.5;
@@ -40,7 +43,7 @@ function getRoadCostAt(x: number, y: number, ctx: StrategicGenContext): number {
   if (ctx.features[y][x].has('main_road')) cost -= 4;
   if (ctx.features[y][x].has('secondary_road')) cost -= 2;
 
-  return Math.max(1, cost);
+  return Math.max(0.5, cost);
 }
 
 export function computeRoadCostMap(ctx: StrategicGenContext): number[][] {

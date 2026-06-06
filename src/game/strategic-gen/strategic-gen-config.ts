@@ -1,8 +1,16 @@
+export interface DesertControl {
+  enabled: boolean;
+  maxRatio: number;
+  moistureThreshold: number;
+  requireHighTemperature: boolean;
+}
+
 export interface StrategicGenConfig {
   seed: number;
   width: number;
   height: number;
   worldShape: 'continent' | 'peninsula' | 'island' | 'inland' | 'river_basin';
+  terrainPreset: 'temperate' | 'arid' | 'mixed';
   terrain: {
     seaRatio: number;
     mountainRatio: number;
@@ -10,6 +18,7 @@ export interface StrategicGenConfig {
     desertRatio: number;
     marshRatio: number;
   };
+  desertControl: DesertControl;
   rivers: {
     mainRiverCount: number;
     tributaryChance: number;
@@ -45,12 +54,19 @@ export const DEFAULT_STRATEGIC_GEN_CONFIG: StrategicGenConfig = {
   width: 64,
   height: 48,
   worldShape: 'peninsula',
+  terrainPreset: 'temperate',
   terrain: {
     seaRatio: 0.18,
     mountainRatio: 0.18,
     forestRatio: 0.24,
     desertRatio: 0.05,
     marshRatio: 0.06,
+  },
+  desertControl: {
+    enabled: false,
+    maxRatio: 0.04,
+    moistureThreshold: 0.12,
+    requireHighTemperature: true,
   },
   rivers: {
     mainRiverCount: 5,
