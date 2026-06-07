@@ -1,6 +1,7 @@
 // ===== 战略模式类型定义 =====
 
 import { Faction, AIDifficulty, UnitType } from './types';
+import type { ForceCommandState } from './command/command-types';
 
 /** Game mode */
 export type GameMode = 'tactical' | 'strategic' | 'campaign';
@@ -35,6 +36,7 @@ export interface StrategicForce {
   moveRange: number; // How many sectors it can move
   vision: number; // How many sectors it can see
   templateKey?: string; // Force template type key (e.g. 'armor', 'mech_inf')
+  command?: ForceCommandState;
 }
 
 /** Strategic base terrain type for map generation */

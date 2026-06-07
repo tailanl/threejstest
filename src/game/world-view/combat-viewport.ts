@@ -39,6 +39,18 @@ export interface CombatViewport {
   scale: 'combat';
 }
 
+export function getCombatViewportFromOperationCell(params: {
+  regionTile: RegionTile;
+  cellPosition: WorldPosition;
+  width?: number;
+  height?: number;
+  battleType?: BattleType;
+  attackerDirection?: 'north' | 'south' | 'east' | 'west';
+}): CombatViewport {
+  const { regionTile, cellPosition, width = 64, height = 48, battleType, attackerDirection } = params;
+  return getCombatViewport({ regionTile, center: cellPosition, width, height, battleType, attackerDirection });
+}
+
 export function getCombatViewport(params: {
   regionTile: RegionTile;
   center: WorldPosition;

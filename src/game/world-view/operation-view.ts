@@ -73,6 +73,14 @@ export interface OperationView {
   scale: 'operation';
 }
 
+export function getOperationViewForChunk(regionTile: RegionTile, chunk: StrategicChunk, viewSize: number): OperationView {
+  const center: WorldPosition = {
+    globalX: chunk.worldRect.x + Math.floor(chunk.worldRect.width / 2),
+    globalY: chunk.worldRect.y + Math.floor(chunk.worldRect.height / 2),
+  };
+  return getOperationView({ regionTile, center, width: viewSize, height: viewSize });
+}
+
 export function getOperationView(params: {
   regionTile: RegionTile;
   center: WorldPosition;

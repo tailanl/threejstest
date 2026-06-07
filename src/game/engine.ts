@@ -1189,6 +1189,12 @@ export function attackUnit(state: GameState, attacker: Unit, targetPos: Position
   defenderUnit.stats = { ...defenderUnit.stats, hp: Math.max(0, defenderUnit.stats.hp - damage) };
   attackerUnit.totalDamageDealt += damage;
 
+  // Modern combat: apply suppression after damage
+  if (defenderUnit.modern) {
+    defenderUnit.modern.suppression = Math.min(100, (defenderUnit.modern.suppression ?? 0) + damage * 0.5);
+    defenderUnit.modern.morale = Math.max(0, (defenderUnit.modern.morale ?? 100) - damage * 0.3);
+  }
+
   if (defenderUnit.stats.hp <= 0) {
     defenderUnit.isAlive = false;
     const cell = getCell(newMap, targetPos);

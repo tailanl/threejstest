@@ -22,6 +22,27 @@ import StrategicChunkView from '@/components/game/StrategicChunkView';
 import WorldMapCanvas from '@/components/game/WorldMapCanvas';
 import { TERRAIN_CONFIGS } from '@/game/config';
 import type { MapCell } from '@/game/types';
+// WorldAtlas imports
+import { generateWorldAtlas } from '@/game/world-atlas/macro-map-generator';
+import { DEFAULT_WORLD_ATLAS_CONFIG, DEBUG_WORLD_ATLAS_CONFIG } from '@/game/world-atlas/atlas-config';
+import type { WorldAtlas, MacroCell } from '@/game/world-atlas/atlas-types';
+import { generateRegionTile } from '@/game/world-atlas/region-tile-generator';
+import type { RegionTile } from '@/game/world-map/world-map-types';
+import { RegionCache } from '@/game/world-atlas/region-cache';
+import { buildStrategicMapFromRegionTile } from '@/game/world-view/strategic-map-adapter';
+import { getOperationViewForChunk } from '@/game/world-view/operation-view';
+import type { OperationView } from '@/game/world-view/operation-view';
+import { getCombatViewportFromOperationCell } from '@/game/world-view/combat-viewport';
+import type { CombatViewport } from '@/game/world-view/combat-viewport';
+import { convertCombatViewportToGameMap as convertCombatViewportToGameMapWV } from '@/game/world-view/world-to-game-map';
+import { parseCommandText, createHQOrderFromParsed } from '@/game/command/command-parser';
+import type { HQOrder } from '@/game/command/command-types';
+import { generateReportsFromBattleLog } from '@/game/reports/report-generator';
+import type { AIReport } from '@/game/reports/report-types';
+import type { StrategicChunk } from '@/game/world-view/strategic-chunks';
+import CommandInputPanel from '@/components/game/CommandInputPanel';
+import AIReportPanel from '@/components/game/AIReportPanel';
+import WorldDebugPanel from '@/components/game/WorldDebugPanel';
 
 const MAP_SIZE_OPTIONS = [
   { label: '战术(16×12)', width: 16, height: 12 },
@@ -32,6 +53,18 @@ const MAP_SIZE_OPTIONS = [
   { label: '巨型(128×96)', width: 128, height: 96 },
   { label: '史诗(192×144)', width: 192, height: 144 },
 ] as const;
+
+const BIOME_COLORS: Record<string, string> = {
+  ocean: '#1a5276',
+  coast: '#2e86c1',
+  plains: '#82e0aa',
+  forest: '#1e8449',
+  mountain: '#7f8c8d',
+  desert: '#f9e79f',
+  marshland: '#76d7c4',
+  highland: '#aeb6bf',
+  urban_corridor: '#f0b27a',
+};
 
 function randomSeed(): number {
   return Math.floor(Math.random() * 1000000);
@@ -91,7 +124,7 @@ export default function MapPreviewPage() {
 
   const [hoveredCell, setHoveredCell] = useState<{ x: number; z: number; terrain: string } | null>(null);
 
-  const [genMode, setGenMode] = useState<'procedural' | 'hierarchical' | 'fused' | 'mega' | 'strategic'>('procedural');
+  const [genMode, setGenMode] = useState<'procedural' | 'hierarchical' | 'fused' | 'mega' | 'strategic' | 'worldatlas'>('procedural');
   const [hierPreview, setHierPreview] = useState<HierarchicalPreviewData>(() => ({
     seed: randomSeed(),
     macroWidth: 4,
@@ -135,6 +168,21 @@ export default function MapPreviewPage() {
   const [worldMapUseDebug, setWorldMapUseDebug] = useState(true);
   const [selectedWorldChunk, setSelectedWorldChunk] = useState<{ x: number; y: number } | null>(null);
   const [operationViewRect, setOperationViewRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+
+  // WorldAtlas state
+  const [worldAtlas, setWorldAtlas] = useState<WorldAtlas | null>(null);
+  const [isGeneratingAtlas, setIsGeneratingAtlas] = useState(false);
+  const [atlasUseDebug, setAtlasUseDebug] = useState(true);
+  const [atlasSeed, setAtlasSeed] = useState(20260606);
+  const [currentRegionTile, setCurrentRegionTile] = useState<RegionTile | null>(null);
+  const [currentStrategicMap, setCurrentStrategicMap] = useState<StrategicMap | null>(null);
+  const [currentOperationView, setCurrentOperationView] = useState<OperationView | null>(null);
+  const [currentCombatViewport, setCurrentCombatViewport] = useState<CombatViewport | null>(null);
+  const [currentGameMap, setCurrentGameMap] = useState<GameMap | null>(null);
+  const [selectedAtlasChunk, setSelectedAtlasChunk] = useState<StrategicChunk | null>(null);
+  const [aiReports, setAiReports] = useState<AIReport[]>([]);
+  const [activeOrders, setActiveOrders] = useState<HQOrder[]>([]);
+  const [regionCache] = useState(() => new RegionCache());
 
   const galleryThumbs = useMemo(() => {
     return gallerySeeds.map(seed => {
@@ -495,6 +543,16 @@ export default function MapPreviewPage() {
             onClick={() => setGenMode('strategic')}
           >
             ⚔️ 战略地图
+          </button>
+          <button
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              genMode === 'worldatlas'
+                ? 'bg-teal-600 text-white shadow-lg shadow-teal-500/20'
+                : 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700'
+            }`}
+            onClick={() => setGenMode('worldatlas')}
+          >
+            🌍 WorldAtlas
           </button>
         </div>
 
@@ -899,6 +957,62 @@ export default function MapPreviewPage() {
                 </div>
               </div>
             </div>
+          ) : genMode === 'worldatlas' ? (
+            <div className="space-y-3">
+              <div className="flex gap-3 items-center flex-wrap">
+                <label className="text-teal-300/70 text-xs w-12">种子</label>
+                <input type="number" value={atlasSeed} onChange={e => setAtlasSeed(Number(e.target.value))} className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-sm w-24" />
+
+                <label className="flex items-center gap-1 text-xs text-white/50 cursor-pointer">
+                  <input type="checkbox" checked={atlasUseDebug} onChange={e => setAtlasUseDebug(e.target.checked)} className="rounded" />
+                  64×64 调试模式
+                </label>
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <button onClick={() => {
+                  setIsGeneratingAtlas(true);
+                  setCurrentRegionTile(null);
+                  setCurrentStrategicMap(null);
+                  setCurrentOperationView(null);
+                  setCurrentCombatViewport(null);
+                  setCurrentGameMap(null);
+                  setSelectedAtlasChunk(null);
+                  regionCache.clear();
+                  setTimeout(() => {
+                    try {
+                      const config = atlasUseDebug
+                        ? { ...DEBUG_WORLD_ATLAS_CONFIG, seed: atlasSeed }
+                        : { ...DEFAULT_WORLD_ATLAS_CONFIG, seed: atlasSeed };
+                      const atlas = generateWorldAtlas(config);
+                      setWorldAtlas(atlas);
+                    } catch (err) {
+                      console.error('[WorldAtlas] Generation failed:', err);
+                      setWorldAtlas(null);
+                    }
+                    setIsGeneratingAtlas(false);
+                  }, 50);
+                }} disabled={isGeneratingAtlas} className={`flex-1 bg-gradient-to-r text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-lg transition-all cursor-pointer ${isGeneratingAtlas ? 'from-gray-600 to-gray-500 cursor-wait' : 'from-teal-700 to-cyan-600 hover:from-teal-600 hover:to-cyan-500 shadow-teal-500/30'}`}>
+                  {isGeneratingAtlas ? '⏳ 生成中...' : `🌍 Generate WorldAtlas (${atlasUseDebug ? '64×64' : '256×256'} MacroMap)`}
+                </button>
+                {worldAtlas && (
+                  <button onClick={() => { setWorldAtlas(null); setCurrentRegionTile(null); setCurrentStrategicMap(null); setCurrentOperationView(null); setCurrentCombatViewport(null); setCurrentGameMap(null); setSelectedAtlasChunk(null); regionCache.clear(); }} className="px-4 py-2.5 bg-gray-700 text-white rounded-lg text-sm font-medium hover:bg-gray-600 transition-colors cursor-pointer">
+                    🗑️ 清除
+                  </button>
+                )}
+              </div>
+
+              {worldAtlas && (
+                <div className="text-xs text-teal-300/60 bg-teal-900/15 rounded px-3 py-2 flex flex-wrap gap-x-4 gap-y-1">
+                  <span>📐 {worldAtlas.virtualWidth}×{worldAtlas.virtualHeight}</span>
+                  <span>🗺️ {worldAtlas.macroWidth}×{worldAtlas.macroHeight} MacroCells</span>
+                  <span>🔲 {worldAtlas.regionGridWidth}×{worldAtlas.regionGridHeight} Regions</span>
+                  <span>🏛️ {worldAtlas.politicalRegions.length} Political</span>
+                  <span>💰 {worldAtlas.economicZones.length} Economic</span>
+                  <span>👥 {worldAtlas.humanGeographyZones.length} HumanGeo</span>
+                </div>
+              )}
+            </div>
           ) : null}
         </div>
 
@@ -908,7 +1022,7 @@ export default function MapPreviewPage() {
             <div className="text-4xl mb-4">🗺️</div>
             <div className="text-xl text-gray-400 mb-2">调整参数后点击"生成地图"按钮开始</div>
             <div className="text-sm text-gray-500">
-              当前模式: {genMode === 'procedural' ? '🌬️ 程序化地形' : genMode === 'hierarchical' ? '🧩 分层模板' : genMode === 'fused' ? '🌏 融合战略' : genMode === 'mega' ? '🌍 超大地图' : '⚔️ 战略地图'}
+              当前模式: {genMode === 'procedural' ? '🌬️ 程序化地形' : genMode === 'hierarchical' ? '🧩 分层模板' : genMode === 'fused' ? '🌏 融合战略' : genMode === 'mega' ? '🌍 超大地图' : genMode === 'strategic' ? '⚔️ 战略地图' : '🌍 WorldAtlas'}
             </div>
           </div>
         )}
@@ -2328,6 +2442,264 @@ export default function MapPreviewPage() {
                 )}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ===== WorldAtlas Display ===== */}
+        {worldAtlas && genMode === 'worldatlas' && (
+          <div className="space-y-4">
+            {/* MacroMap Grid */}
+            <div className="bg-gray-900/60 border border-teal-500/20 rounded-xl p-4">
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <h2 className="text-lg font-semibold text-teal-300/90">🌍 MacroMap ({worldAtlas.macroWidth}×{worldAtlas.macroHeight})</h2>
+                <div className="flex gap-2 text-xs text-white/50">
+                  <span>Click a region to generate RegionTile</span>
+                </div>
+              </div>
+
+              {/* Biome Legend */}
+              <div className="flex flex-wrap gap-2 mb-3">
+                {Object.entries(BIOME_COLORS).map(([biome, color]) => (
+                  <span key={biome} className="flex items-center gap-1 text-xs text-white/60">
+                    <span className="w-3 h-3 rounded-sm inline-block" style={{ backgroundColor: color }} />
+                    {biome}
+                  </span>
+                ))}
+              </div>
+
+              <div className="overflow-auto max-h-[500px] bg-black/20 rounded-lg p-2">
+                {(() => {
+                  const mw = worldAtlas.macroWidth;
+                  const mh = worldAtlas.macroHeight;
+                  const cellSz = Math.max(2, Math.min(8, Math.floor(Math.min(700, window?.innerWidth ?? 800) / mw)));
+                  return (
+                    <div className="inline-grid gap-[0px]" style={{ gridTemplateColumns: `repeat(${mw}, ${cellSz}px)` }}>
+                      {worldAtlas.macroCells.flat().map((cell, idx) => {
+                        const regionX = Math.floor(cell.x / (mw / worldAtlas.regionGridWidth));
+                        const regionY = Math.floor(cell.y / (mh / worldAtlas.regionGridHeight));
+                        return (
+                          <div
+                            key={idx}
+                            className="cursor-pointer hover:brightness-125 transition-all"
+                            style={{
+                              width: `${cellSz}px`,
+                              height: `${cellSz}px`,
+                              backgroundColor: BIOME_COLORS[cell.biome] || '#333',
+                            }}
+                            title={`(${cell.x},${cell.y}) ${cell.biome} | elev=${cell.elevation.toFixed(2)} moist=${cell.moisture.toFixed(2)} temp=${cell.temperature.toFixed(2)}${cell.hasMajorRiver ? ' 🌊river' : ''} | Region(${regionX},${regionY})`}
+                            onClick={() => {
+                              if (!worldAtlas) return;
+                              const rx = Math.min(regionX, worldAtlas.regionGridWidth - 1);
+                              const ry = Math.min(regionY, worldAtlas.regionGridHeight - 1);
+                              const rKey = `region_${rx}_${ry}`;
+                              let tile = regionCache.get(rKey) as RegionTile | undefined;
+                              if (!tile) {
+                                tile = generateRegionTile(worldAtlas, rx, ry);
+                                regionCache.set(rKey, tile);
+                              }
+                              setCurrentRegionTile(tile);
+                              const sm = buildStrategicMapFromRegionTile(tile);
+                              setCurrentStrategicMap(sm);
+                              setCurrentOperationView(null);
+                              setCurrentCombatViewport(null);
+                              setCurrentGameMap(null);
+                              setSelectedAtlasChunk(null);
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* RegionTile StrategicChunks */}
+            {currentRegionTile && currentStrategicMap && (
+              <div className="bg-gray-900/60 border border-cyan-500/20 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                  <h2 className="text-lg font-semibold text-cyan-300/90">
+                    🔲 RegionTile ({currentRegionTile.regionX},{currentRegionTile.regionY}) — StrategicChunks {currentStrategicMap.width}×{currentStrategicMap.height}
+                  </h2>
+                  <div className="flex gap-2 text-xs text-white/50">
+                    <span>🏙️ {currentRegionTile.cities.length} cities</span>
+                    <span>🛣️ {currentRegionTile.roads.length} roads</span>
+                    <span>🌊 {currentRegionTile.rivers.length} rivers</span>
+                    <button onClick={() => { setCurrentRegionTile(null); setCurrentStrategicMap(null); setCurrentOperationView(null); setCurrentCombatViewport(null); setCurrentGameMap(null); setSelectedAtlasChunk(null); }} className="px-2 py-1 rounded text-xs bg-gray-700 text-gray-400 hover:bg-gray-600 cursor-pointer">
+                      ✕ 关闭
+                    </button>
+                  </div>
+                </div>
+
+                <div className="overflow-auto bg-black/20 rounded-lg p-2">
+                  <div className="inline-grid gap-[1px]" style={{ gridTemplateColumns: `repeat(${currentStrategicMap.width}, 28px)` }}>
+                    {currentStrategicMap.sectors.flat().map((sector, idx) => {
+                      const terrainColors: Record<string, string> = {
+                        plains: '#7cb342', forest: '#2e7d32', mountain: '#78909c', water: '#1565c0',
+                        desert: '#fdd835', marshland: '#5d4037', highland: '#546e7a', city: '#8d6e63',
+                      };
+                      const bgColor = terrainColors[sector.baseTerrain || sector.terrain] || '#333';
+                      const isCity = sector.features?.includes('city') || sector.features?.includes('capital');
+                      const isBridge = sector.features?.includes('bridge');
+                      const isFortress = sector.features?.includes('fortress');
+                      const chunk = currentRegionTile.strategicChunks[sector.position.y]?.[sector.position.x];
+
+                      return (
+                        <div key={idx}
+                          onClick={() => {
+                            if (!currentRegionTile || !chunk) return;
+                            setSelectedAtlasChunk(chunk);
+                            const opView = getOperationViewForChunk(currentRegionTile, chunk, 128);
+                            setCurrentOperationView(opView);
+                            setCurrentCombatViewport(null);
+                            setCurrentGameMap(null);
+                          }}
+                          className="cursor-pointer hover:brightness-125 transition-all relative"
+                          style={{
+                            width: '28px',
+                            height: '28px',
+                            backgroundColor: bgColor,
+                          }}
+                          title={`(${sector.position.x},${sector.position.y}) ${sector.baseTerrain || sector.terrain}${sector.features?.length ? ' [' + sector.features.join(',') + ']' : ''}\nClick to generate OperationView`}
+                        >
+                          {isCity && <div className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-yellow-300 leading-none">{sector.features?.includes('capital') ? '★' : '●'}</div>}
+                          {isBridge && <div className="absolute inset-0 flex items-center justify-center text-[8px] text-amber-200 leading-none">≋</div>}
+                          {isFortress && <div className="absolute inset-0 flex items-center justify-center text-[8px] text-red-300 leading-none">◆</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <p className="text-xs text-white/30 mt-2">Click a chunk to generate OperationView (128×128)</p>
+              </div>
+            )}
+
+            {/* OperationView */}
+            {currentOperationView && (
+              <div className="bg-gray-900/60 border border-indigo-500/20 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-lg font-semibold text-indigo-300/90">
+                    🔍 OperationView ({currentOperationView.worldRect.width}×{currentOperationView.worldRect.height})
+                  </h2>
+                  <div className="flex gap-2">
+                    <span className="text-xs text-white/50">Origin: ({currentOperationView.worldRect.x},{currentOperationView.worldRect.y})</span>
+                    <button onClick={() => { setCurrentOperationView(null); setCurrentCombatViewport(null); setCurrentGameMap(null); setSelectedAtlasChunk(null); }} className="px-2 py-1 rounded text-xs bg-gray-700 text-gray-400 hover:bg-gray-600 cursor-pointer">
+                      ✕ 关闭
+                    </button>
+                  </div>
+                </div>
+                <div className="overflow-auto bg-black/20 rounded-lg p-2 max-h-[400px]">
+                  {(() => {
+                    const cells = currentOperationView.cells;
+                    const oh = cells.length;
+                    const ow = oh > 0 ? cells[0].length : 0;
+                    const cellSz = Math.max(2, Math.min(6, Math.floor(500 / Math.max(ow, oh))));
+                    const terrainColors: Record<string, string> = {
+                      plains: '#7cb342', forest: '#2e7d32', mountain: '#78909c', water: '#1565c0',
+                      desert: '#fdd835', marshland: '#5d4037', highland: '#546e7a', city: '#8d6e63',
+                    };
+                    return (
+                      <div className="inline-grid gap-[0px]" style={{ gridTemplateColumns: `repeat(${ow}, ${cellSz}px)` }}>
+                        {cells.flat().map((cell, idx) => (
+                          <div
+                            key={idx}
+                            className="cursor-pointer hover:brightness-150 transition-all"
+                            style={{
+                              width: `${cellSz}px`,
+                              height: `${cellSz}px`,
+                              backgroundColor: terrainColors[cell.baseTerrain] || '#333',
+                            }}
+                            title={`(${cell.globalX},${cell.globalY}) ${cell.baseTerrain}${cell.features.length ? ' [' + cell.features.join(',') + ']' : ''}\nClick to generate CombatViewport`}
+                            onClick={() => {
+                              if (!currentRegionTile) return;
+                              const vp = getCombatViewportFromOperationCell({
+                                regionTile: currentRegionTile,
+                                cellPosition: { globalX: cell.globalX, globalY: cell.globalY },
+                                width: 64,
+                                height: 48,
+                              });
+                              setCurrentCombatViewport(vp);
+                              const gm = convertCombatViewportToGameMapWV(vp);
+                              setCurrentGameMap(gm);
+                            }}
+                          />
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+                <p className="text-xs text-white/30 mt-2">Click a cell to generate CombatViewport (64×48) and GameMap</p>
+              </div>
+            )}
+
+            {/* CombatViewport / GameMap */}
+            {currentCombatViewport && currentGameMap && (
+              <div className="bg-gray-900/60 border border-orange-500/20 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-lg font-semibold text-orange-300/90">
+                    ⚔️ CombatViewport → GameMap ({currentGameMap.width}×{currentGameMap.height}) | Battle: {currentCombatViewport.battleType}
+                  </h2>
+                  <div className="flex gap-2">
+                    <span className="text-xs text-white/50">Dir: {currentCombatViewport.attackerDirection}</span>
+                    <button onClick={() => { setCurrentCombatViewport(null); setCurrentGameMap(null); }} className="px-2 py-1 rounded text-xs bg-gray-700 text-gray-400 hover:bg-gray-600 cursor-pointer">
+                      ✕ 关闭
+                    </button>
+                  </div>
+                </div>
+                <div className="overflow-auto bg-black/20 rounded-lg p-2 max-h-[400px]">
+                  <div className="inline-grid gap-[1px]" style={{ gridTemplateColumns: `repeat(${currentGameMap.width}, 10px)` }}>
+                    {currentGameMap.cells.flat().map((cell, idx) => {
+                      const TACTICAL_COLORS: Record<string, string> = {
+                        plains: '#7cb342', forest: '#2e7d32', mountain: '#78909c', water: '#1565c0',
+                        city: '#8d6e63', road: '#9e9e9e', swamp: '#5d4037', bridge: '#d4a017',
+                        desert: '#fdd835', fortress: '#455a64',
+                      };
+                      return (
+                        <div key={idx} style={{
+                          width: '10px', height: '10px',
+                          backgroundColor: TACTICAL_COLORS[cell.terrain] || '#333',
+                          borderRadius: '1px',
+                        }} title={`(${cell.position.x},${cell.position.z}) ${cell.terrain}${cell.features?.length ? ' [' + cell.features.join(',') + ']' : ''}`} />
+                      );
+                    })}
+                  </div>
+                </div>
+                {/* Terrain stats */}
+                <div className="mt-2 text-xs text-white/50 grid grid-cols-3 gap-2">
+                  {(() => {
+                    const counts: Record<string, number> = {};
+                    currentGameMap.cells.flat().forEach(c => { counts[c.terrain] = (counts[c.terrain] || 0) + 1; });
+                    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, v]) => (
+                      <span key={k}>{k}: {v}</span>
+                    ));
+                  })()}
+                </div>
+              </div>
+            )}
+
+            {/* Panels */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <CommandInputPanel
+                onCommand={(text) => {
+                  const parsed = parseCommandText(text);
+                  const order = createHQOrderFromParsed(parsed, ['force_1'], 0, text);
+                  setActiveOrders(prev => [...prev, order]);
+                }}
+                selectedForceIds={['force_1']}
+                turn={0}
+              />
+              <AIReportPanel
+                reports={aiReports}
+                onAcknowledge={(reportId) => {
+                  setAiReports(prev => prev.filter(r => r.id !== reportId));
+                }}
+              />
+            </div>
+            <WorldDebugPanel
+              atlas={worldAtlas}
+              currentRegion={currentRegionTile}
+              cachedRegionIds={regionCache.cachedRegionIds}
+            />
           </div>
         )}
 

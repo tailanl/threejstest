@@ -102,6 +102,15 @@ export interface Unit {
   markedTargetsTurns?: number;   // turns remaining for marks
   // v25.0: Unit action history
   actionHistory: UnitActionRecord[];
+  // Modern combat fields (combat-modern module)
+  modern?: {
+    suppression: number;
+    morale: number;
+    cohesion: number;
+    fuel: number;
+    maxFuel: number;
+    ammo: Record<string, number>;
+  };
 }
 
 /** 地形属性 */

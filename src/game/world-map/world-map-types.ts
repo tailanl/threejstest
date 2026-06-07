@@ -2,9 +2,10 @@
  * RegionTile 类型定义 - 1024×1024 高精度区域
  */
 
-import type { WorldPosition, FactionId } from '../world-atlas/atlas-types';
+import type { WorldPosition, FactionId, WorldAtlas } from '../world-atlas/atlas-types';
 import type { WorldCell, WorldTerrainType, WorldFeatureType } from './world-cell-types';
 import type { StrategicChunk } from '../world-view/strategic-chunks';
+import type { RegionRNG, RegionNoise } from '../world-atlas/region-random';
 
 export type WorldCityRank = 'capital' | 'major' | 'regional' | 'town';
 
@@ -80,4 +81,20 @@ export interface RegionTile {
   politicalRegionIds: string[];
   economicZoneIds: string[];
   humanGeographyZoneIds: string[];
+}
+
+export interface RegionGenerationContext {
+  atlas: WorldAtlas;
+  regionX: number;
+  regionY: number;
+  regionSize: number;
+  padding: number;
+  worldOrigin: { globalX: number; globalY: number };
+  rng: RegionRNG;
+  noise: RegionNoise;
+  paddedCells: WorldCell[][];
+  cells: WorldCell[][];
+  cities: GeneratedCity[];
+  roads: GeneratedRoad[];
+  rivers: GeneratedRiver[];
 }

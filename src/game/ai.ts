@@ -1,6 +1,6 @@
 // ===== AI 对手逻辑 - 增强版 =====
 
-import { GameState, Unit, Position, Faction, AIDifficulty } from './types';
+import { GameState, Unit, Position, Faction, AIDifficulty, GameMap } from './types';
 import { 
   getMovablePositions, getAttackablePositions, 
   moveUnit, attackUnit, endTurn, buildFortification, enterStealth, clearMinefield,
@@ -53,6 +53,27 @@ const DIFFICULTY_PARAMS: Record<AIDifficulty, {
 /** 计算两个位置之间的曼哈顿距离 */
 function manhattanDist(a: Position, b: Position): number {
   return Math.abs(a.x - b.x) + Math.abs(a.z - b.z);
+}
+
+/** Simplified line-of-sight check — returns false if a mountain cell blocks the path */
+function hasLineOfSightSimplified(
+  map: GameMap,
+  from: Position,
+  to: Position
+): boolean {
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  const steps = Math.max(Math.abs(dx), Math.abs(dz));
+  if (steps <= 1) return true;
+
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    const mx = Math.round(from.x + dx * t);
+    const mz = Math.round(from.z + dz * t);
+    const cell = map.cells[mz]?.[mx];
+    if (cell && cell.terrain === 'mountain') return false;
+  }
+  return true;
 }
 
 /** 评估位置价值 - 增强版 */
@@ -661,7 +682,10 @@ function aiActUnit(state: GameState, unit: Unit, difficulty: AIDifficulty, allAi
   }
   
   // 1. 移动阶段
-  if (unit.canMove) {
+  // Modern combat: skip movement if out of fuel
+  if (unit.modern && unit.modern.fuel <= 0) {
+    // Skip movement, unit is immobilized
+  } else if (unit.canMove) {
     // v67.0: Evaluate retreat BEFORE normal movement so retreat is considered as a movement option
     const shouldRetreat = unit.stats.hp < unit.stats.maxHp * 0.3 && unit.isAlive;
     const adjacentEnemies = shouldRetreat ? currentState.units.filter(u =>
@@ -802,6 +826,16 @@ function aiActUnit(state: GameState, unit: Unit, difficulty: AIDifficulty, allAi
     );
     return { ...currentState, units: newUnits };
   }
+  // Modern combat: skip attack if modern ammo depleted
+  if (unit.canAttack && unit.isAlive && unit.modern) {
+    const modernAmmoTotal = Object.values(unit.modern.ammo).reduce((sum, v) => sum + v, 0);
+    if (modernAmmoTotal <= 0) {
+      const newUnits = currentState.units.map(u => 
+        u.id === unit.id ? { ...u, canAttack: false } : u
+      );
+      return { ...currentState, units: newUnits };
+    }
+  }
   // Morale check: panicked units cannot attack
   if (unit.canAttack && unit.isAlive && unit.stats.morale !== undefined && unit.stats.morale !== null && unit.stats.morale < MORALE_CRUSH_THRESHOLD) {
     const newUnits = currentState.units.map(u => 
@@ -830,7 +864,10 @@ function aiActUnit(state: GameState, unit: Unit, difficulty: AIDifficulty, allAi
             u.position.x === targetPos.x && u.position.z === targetPos.z && u.isAlive && u.faction !== unit.faction
           );
           if (!target) continue;
-          
+
+          // LOS check: skip targets blocked by mountains
+          if (!hasLineOfSightSimplified(currentState.map, unit.position, target.position)) continue;
+
           // 综合优先级：低血量 + 高威胁 + 集火加成 + 装甲克制
           let priority = 0;
           
