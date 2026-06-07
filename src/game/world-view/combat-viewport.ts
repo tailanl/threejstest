@@ -61,8 +61,12 @@ export function getCombatViewport(params: {
 }): CombatViewport {
   const { regionTile, center, width, height, battleType = 'meeting_engagement', attackerDirection = 'west' } = params;
 
-  const startX = Math.max(0, center.globalX - Math.floor(width / 2));
-  const startY = Math.max(0, center.globalY - Math.floor(height / 2));
+  // Convert global center to local coordinates within the region tile
+  const localCenterX = center.globalX - regionTile.worldOrigin.globalX;
+  const localCenterY = center.globalY - regionTile.worldOrigin.globalY;
+
+  const startX = Math.max(0, localCenterX - Math.floor(width / 2));
+  const startY = Math.max(0, localCenterY - Math.floor(height / 2));
   const endX = Math.min(regionTile.width, startX + width);
   const endY = Math.min(regionTile.height, startY + height);
 
@@ -79,7 +83,12 @@ export function getCombatViewport(params: {
 
   return {
     id: `combat_${center.globalX}_${center.globalY}_${width}x${height}`,
-    worldRect: { x: startX, y: startY, width: endX - startX, height: endY - startY },
+    worldRect: {
+      x: regionTile.worldOrigin.globalX + startX,
+      y: regionTile.worldOrigin.globalY + startY,
+      width: endX - startX,
+      height: endY - startY,
+    },
     cells,
     center,
     battleType,

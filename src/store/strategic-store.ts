@@ -588,21 +588,7 @@ export const useStrategicStore = create<StrategicStore>((set, get) => ({
     if (!chunks[pos.y]?.[pos.x]) return;
     
     const chunk = chunks[pos.y][pos.x];
-    // Use getOperationViewForChunk if available, otherwise fallback to getOperationView
-    let operationView;
-    try {
-      const { getOperationViewForChunk } = require('@/game/world-view/operation-view');
-      operationView = getOperationViewForChunk(currentRegionTile, chunk, hasCity ? 256 : 128);
-    } catch {
-      operationView = {
-        id: `opv_${pos.x}_${pos.y}`,
-        center: { globalX: chunk.worldRect.x + chunk.worldRect.width / 2, globalY: chunk.worldRect.y + chunk.worldRect.height / 2 },
-        width: hasCity ? 256 : 128,
-        height: hasCity ? 256 : 128,
-        cells: [],
-        chunkIds: [chunk.id],
-      };
-    }
+    const operationView = getOperationViewForChunk(currentRegionTile, chunk, hasCity ? 256 : 128);
     set({ selectedOperationView: operationView });
   },
 
@@ -610,20 +596,14 @@ export const useStrategicStore = create<StrategicStore>((set, get) => ({
     const { currentRegionTile } = get();
     if (!currentRegionTile) return;
     
-    try {
-      const { getCombatViewportFromOperationCell } = require('@/game/world-view/combat-viewport');
-      const viewport = getCombatViewportFromOperationCell({
-        regionTile: currentRegionTile,
-        centerGlobalX: pos.globalX,
-        centerGlobalY: pos.globalY,
-        width: 64,
-        height: 48,
-      });
-      const gameMap = convertCombatViewportToGameMap(viewport);
-      set({ selectedCombatViewport: viewport, tacticalMapFromWorld: gameMap });
-    } catch (e) {
-      console.error('[CombatViewport] Failed:', e);
-    }
+    const viewport = getCombatViewportFromOperationCell({
+      regionTile: currentRegionTile,
+      cellPosition: pos,
+      width: 64,
+      height: 48,
+    });
+    const gameMap = convertCombatViewportToGameMap(viewport);
+    set({ selectedCombatViewport: viewport, tacticalMapFromWorld: gameMap });
   },
 
   closeOperationView: () => set({ selectedOperationView: undefined }),

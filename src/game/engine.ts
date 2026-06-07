@@ -330,6 +330,16 @@ export function initGameState(difficulty: AIDifficulty = 'normal', mapType: MapT
   return _createBaseGameState(difficulty, map, redDeploy, blueDeploy);
 }
 
+/** 从已有 GameMap 初始化战术游戏状态（不从零生成随机地图） */
+export function initGameStateFromMap(map: GameMap, difficulty: AIDifficulty = 'normal'): GameState {
+  // Use default deployments, adapted to this specific map
+  const redDeploy = RED_DEPLOYMENT.map(d => ({ type: d.type, position: { x: d.position.x, z: d.position.z }, faction: 'red' as Faction }));
+  const blueDeploy = BLUE_DEPLOYMENT.map(d => ({ type: d.type, position: { x: d.position.x, z: d.position.z }, faction: 'blue' as Faction }));
+  const redAdapted = adaptDeployment(redDeploy, map.cells, 'random');
+  const blueAdapted = adaptDeployment(blueDeploy, map.cells, 'random');
+  return _createBaseGameState(difficulty, map, redAdapted, blueAdapted);
+}
+
 /** 计算可移动位置 (BFS) */
 export function getMovablePositions(state: GameState, unit: Unit): Position[] {
   if (!unit.canMove || !unit.isAlive) return [];

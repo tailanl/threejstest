@@ -88,7 +88,7 @@ export function generateRegionCities(ctx: RegionGenerationContext): void {
       rank,
       center: { globalX: ox + bestX, globalY: oy + bestY },
       radius,
-      bounds: { minX, minY, maxX, maxY },
+      bounds: { minX: ox + minX, minY: oy + minY, maxX: ox + maxX, maxY: oy + maxY },
       populationScore: radius * radius * 0.5,
       supplyValue: rank === 'regional' ? 50 : 20,
       victoryPointValue: rank === 'regional' ? 30 : 10,

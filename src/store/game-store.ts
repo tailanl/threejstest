@@ -3,7 +3,7 @@
 import { create } from 'zustand';
 import { GameState, Position, Unit, GamePhase, Faction, AIDifficulty, MapType, MovementAnimation, DamagePopup, CombatToast, UnitType, TacticalDeploymentInfo, TACTICAL_UNIT_COSTS, TACTICAL_DEPLOYMENT_BUDGET, CapturePoint, ReinforcementUnit, ReplayAction, ReplayState, TutorialStep, TUTORIAL_STEPS, SAVE_VERSION } from '@/game/types';
 import { 
-  initGameState, selectUnit, moveUnit, attackUnit, 
+  initGameState, selectUnit, moveUnit, attackUnit,
   endTurn, deselectUnit, findBestAttackPosition, findMovementPath,
   buildFortification,
   initDeploymentState, deployUnit, removeDeployedUnit, confirmTacticalDeployment, getTacticalDeploymentBudget,
@@ -13,6 +13,7 @@ import {
   executeHeroAbility, heroAbilityNeedsTarget, initHeroSelectionState,
   createUnit, estimateDamage, calculateKillProbability,
   assignBlueHero,
+  initGameStateFromMap,
   // v87.0: Removed setAttackerTerrainAtkBonus import (dead code since v84)
   // v67.0: Veterancy and kill streak
   getVeterancyTitle, getKillStreakLabel,
@@ -96,6 +97,7 @@ interface GameStore extends GameState {
   isStrategicTacticalBattle: boolean;
   initStrategicTacticalBattle: (tacticalState: GameState) => void;
   returnToStrategic: () => void;
+  enterTacticalFromCombatViewport: () => void;
   // Deployment actions
   selectedDeploymentType: UnitType | null;
   setSelectedDeploymentType: (type: UnitType | null) => void;
@@ -1915,6 +1917,36 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
 
     set({ isStrategicTacticalBattle: false });
+  },
+
+  enterTacticalFromCombatViewport: () => {
+    let useStrategicStore: any;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const strategicMod = require('@/store/strategic-store');
+      useStrategicStore = strategicMod.useStrategicStore;
+    } catch {
+      console.warn('[enterTacticalFromCombatViewport] Failed to load strategic store modules');
+      return;
+    }
+    const strategicState = useStrategicStore.getState();
+    const gameMap = strategicState.tacticalMapFromWorld;
+    if (!gameMap) {
+      console.warn('[enterTacticalFromCombatViewport] No tacticalMapFromWorld available');
+      return;
+    }
+
+    const tacticalState = initGameStateFromMap(gameMap, strategicState.aiDifficulty ?? 'normal');
+    set({
+      ...tacticalState,
+      isAiProcessing: false,
+      animationKey: 0,
+      isStrategicTacticalBattle: true,
+      gameStartTime: Date.now(),
+      previousTurnState: null,
+    });
+    // Switch to tactical mode in strategic store
+    strategicState.setGameMode('tactical');
   },
 
   // ===== Sound Mute Toggle =====

@@ -3,6 +3,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStrategicStore, type StrategicSaveSlotInfo } from '@/store/strategic-store';
+import { useGameStore } from '@/store/game-store';
 import { STRATEGIC_TERRAIN_CONFIGS, StrategicTerrainType, StrategicForce, StrategicPosition, StrategicSector, StrategicPhase, ReinforcementInfo } from '@/game/strategic-types';
 import { FORCE_TEMPLATES, getDeploymentBudget } from '@/game/strategic-engine';
 import { Button } from '@/components/ui/button';
@@ -765,6 +766,7 @@ export default function StrategicMap() {
   const recallForceFromAICommand = useStrategicStore(s => s.recallForceFromAICommand);
   const clearReports = useStrategicStore(s => s.clearReports);
   const toggleWorldAtlasMode = useStrategicStore(s => s.toggleWorldAtlasMode);
+  const enterTacticalFromCombatViewport = useGameStore(s => s.enterTacticalFromCombatViewport);
 
   const [showLegend, setShowLegend] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
@@ -1770,8 +1772,14 @@ export default function StrategicMap() {
               <h3 className="text-red-400 font-bold text-lg">⚔️ CombatViewport {selectedCombatViewport.worldRect.width}x{selectedCombatViewport.worldRect.height}</h3>
               <button onClick={closeCombatViewport} className="text-gray-400 hover:text-white text-xl">&times;</button>
             </div>
-            <div className="text-gray-300 text-sm">
-              Battleground ready. Use tactical mode to fight.
+            <div className="text-gray-300 text-sm space-y-3">
+              <p>Battleground ready. Click below to enter tactical mode.</p>
+              <button
+                onClick={enterTacticalFromCombatViewport}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg font-bold"
+              >
+                进入战术战斗
+              </button>
             </div>
           </div>
         </div>
