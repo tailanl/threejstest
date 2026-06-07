@@ -1,7 +1,7 @@
 // ===== 战略模式状态管理 (Zustand) =====
 
 import { create } from 'zustand';
-import { AIDifficulty, Faction } from '@/game/types';
+import { AIDifficulty, Faction, GameMap } from '@/game/types';
 import {
   StrategicGameState,
   StrategicPosition,
@@ -44,6 +44,23 @@ import {
   playTurnStartSound, playTurnEndSound, playCancelSound, playSaveSound,
   playDeploySound, playGameOverSound, playVictorySound, playErrorSound,
 } from '@/game/audio';
+import type { WorldAtlas } from '@/game/world-atlas/atlas-types';
+import type { RegionTile } from '@/game/world-map/world-map-types';
+import type { OperationView } from '@/game/world-view/operation-view';
+import type { CombatViewport } from '@/game/world-view/combat-viewport';
+import type { AIReport } from '@/game/reports/report-types';
+import type { BattleLogEvent } from '@/game/reports/report-types';
+import type { HQOrder, ForceCommandState } from '@/game/command/command-types';
+import { generateWorldAtlas } from '@/game/world-atlas/macro-map-generator';
+import { DEFAULT_WORLD_ATLAS_CONFIG } from '@/game/world-atlas/atlas-config';
+import { generateRegionTile } from '@/game/world-atlas/region-tile-generator';
+import { buildStrategicMapFromRegionTile } from '@/game/world-view/strategic-map-adapter';
+import { getOperationViewForChunk } from '@/game/world-view/operation-view';
+import { getCombatViewportFromOperationCell } from '@/game/world-view/combat-viewport';
+import { convertCombatViewportToGameMap } from '@/game/world-view/world-to-game-map';
+import { generateReportsFromBattleLog } from '@/game/reports/report-generator';
+import { parseCommandText, createHQOrderFromParsed } from '@/game/command/command-parser';
+import { delegateForceToAI, recallForceFromAI } from '@/game/command/delegation';
 
 const BASE_AI_STRATEGIC_DELAY = 800;
 
@@ -101,6 +118,30 @@ interface StrategicStore extends StrategicGameState {
   // Save panel UI
   showSavePanel: boolean;
   toggleSavePanel: () => void;
+
+  // WorldAtlas system
+  currentAtlas?: WorldAtlas;
+  currentRegionTile?: RegionTile;
+  selectedOperationView?: OperationView;
+  selectedCombatViewport?: CombatViewport;
+  aiReports: AIReport[];
+  battleLogEvents: BattleLogEvent[];
+  activeOrders: HQOrder[];
+  worldAtlasMode: boolean;
+  tacticalMapFromWorld?: GameMap;
+
+  // WorldAtlas actions
+  generateWorldAtlasAndRegion: () => void;
+  openOperationViewForSector: (pos: { x: number; y: number }, hasCity?: boolean) => void;
+  openCombatViewportFromOperationCell: (pos: { globalX: number; globalY: number }) => void;
+  closeOperationView: () => void;
+  closeCombatViewport: () => void;
+  submitHQCommand: (text: string, assignedForceIds: string[]) => void;
+  delegateForceToAICommand: (forceId: string, autonomy: ForceCommandState['autonomy'], riskTolerance: ForceCommandState['riskTolerance'], reportLevel: ForceCommandState['reportLevel']) => void;
+  recallForceFromAICommand: (forceId: string) => void;
+  appendBattleLogEvents: (events: BattleLogEvent[]) => void;
+  clearReports: () => void;
+  toggleWorldAtlasMode: () => void;
 }
 
 /** Serialize the strategic game state for save */
@@ -170,6 +211,17 @@ export const useStrategicStore = create<StrategicStore>((set, get) => ({
 
   // Save panel
   showSavePanel: false,
+
+  // WorldAtlas state defaults
+  currentAtlas: undefined,
+  currentRegionTile: undefined,
+  selectedOperationView: undefined,
+  selectedCombatViewport: undefined,
+  aiReports: [],
+  battleLogEvents: [],
+  activeOrders: [],
+  worldAtlasMode: false,
+  tacticalMapFromWorld: undefined,
 
   initStrategic: (difficulty: AIDifficulty = 'normal') => {
     const state = initStrategicGame(difficulty);
@@ -495,6 +547,152 @@ export const useStrategicStore = create<StrategicStore>((set, get) => ({
   toggleSavePanel: () => {
     set({ showSavePanel: !get().showSavePanel });
   },
+
+  // ===== WorldAtlas Actions =====
+
+  generateWorldAtlasAndRegion: () => {
+    try {
+      const config = { ...DEFAULT_WORLD_ATLAS_CONFIG, seed: Date.now() };
+      const atlas = generateWorldAtlas(config);
+      console.log('[WorldAtlas] Generated atlas:', atlas.id);
+      
+      // Generate first region (0,0)
+      const regionTile = generateRegionTile(atlas, 0, 0);
+      console.log('[WorldAtlas] Generated region tile:', regionTile.id);
+      
+      // Convert to StrategicMap
+      const strategicMap = buildStrategicMapFromRegionTile(regionTile);
+      console.log('[WorldAtlas] Built strategic map:', strategicMap.width, 'x', strategicMap.height);
+      
+      set({
+        currentAtlas: atlas,
+        currentRegionTile: regionTile,
+        map: strategicMap,
+        worldAtlasMode: true,
+        phase: 'selectForce',
+        selectedForce: undefined,
+        movableSectors: [],
+        attackableSectors: [],
+      });
+      console.log('[WorldAtlas] Strategic map ready. Tiles:', strategicMap.width * strategicMap.height);
+    } catch (e) {
+      console.error('[WorldAtlas] Generation failed:', e);
+    }
+  },
+
+  openOperationViewForSector: (pos, hasCity = false) => {
+    const { currentRegionTile } = get();
+    if (!currentRegionTile) return;
+    
+    const chunks = currentRegionTile.strategicChunks;
+    if (!chunks[pos.y]?.[pos.x]) return;
+    
+    const chunk = chunks[pos.y][pos.x];
+    // Use getOperationViewForChunk if available, otherwise fallback to getOperationView
+    let operationView;
+    try {
+      const { getOperationViewForChunk } = require('@/game/world-view/operation-view');
+      operationView = getOperationViewForChunk(currentRegionTile, chunk, hasCity ? 256 : 128);
+    } catch {
+      operationView = {
+        id: `opv_${pos.x}_${pos.y}`,
+        center: { globalX: chunk.worldRect.x + chunk.worldRect.width / 2, globalY: chunk.worldRect.y + chunk.worldRect.height / 2 },
+        width: hasCity ? 256 : 128,
+        height: hasCity ? 256 : 128,
+        cells: [],
+        chunkIds: [chunk.id],
+      };
+    }
+    set({ selectedOperationView: operationView });
+  },
+
+  openCombatViewportFromOperationCell: (pos) => {
+    const { currentRegionTile } = get();
+    if (!currentRegionTile) return;
+    
+    try {
+      const { getCombatViewportFromOperationCell } = require('@/game/world-view/combat-viewport');
+      const viewport = getCombatViewportFromOperationCell({
+        regionTile: currentRegionTile,
+        centerGlobalX: pos.globalX,
+        centerGlobalY: pos.globalY,
+        width: 64,
+        height: 48,
+      });
+      const gameMap = convertCombatViewportToGameMap(viewport);
+      set({ selectedCombatViewport: viewport, tacticalMapFromWorld: gameMap });
+    } catch (e) {
+      console.error('[CombatViewport] Failed:', e);
+    }
+  },
+
+  closeOperationView: () => set({ selectedOperationView: undefined }),
+  closeCombatViewport: () => set({ selectedCombatViewport: undefined }),
+
+  submitHQCommand: (text, assignedForceIds) => {
+    const { turn, forces } = get();
+    try {
+      const parsed = parseCommandText(text);
+      const order = createHQOrderFromParsed(parsed, assignedForceIds, turn, text);
+      const reports: AIReport[] = [{
+        id: `order_${Date.now()}`,
+        turn,
+        timestamp: Date.now(),
+        type: 'ORDER_CONFIRMATION',
+        fromCommanderId: 'player',
+        relatedOrderIds: [order.id],
+        relatedForceIds: assignedForceIds,
+        title: 'Command Received',
+        summary: `HQ Order #${order.id}: ${order.intent}`,
+        facts: [`Command: ${text}`, `Forces: ${assignedForceIds.join(', ') || 'none'}`],
+        estimates: [],
+        losses: { friendlyConfirmed: { tanksDestroyed: 0, ifvsDestroyed: 0, infantryKilled: 0, artilleryDestroyed: 0, otherDestroyed: 0, total: 0 }, enemyConfirmed: { tanksDestroyed: 0, ifvsDestroyed: 0, infantryKilled: 0, artilleryDestroyed: 0, otherDestroyed: 0, total: 0 }, enemyEstimated: { tanksDestroyed: 0, ifvsDestroyed: 0, infantryKilled: 0, artilleryDestroyed: 0, otherDestroyed: 0, total: 0 } },
+        supply: { ammoState: 'good', fuelState: 'good', repairState: 'good' },
+        recommendations: [],
+        confidence: 'high',
+        rawLogIds: [],
+      }];
+      set(s => ({
+        activeOrders: [...s.activeOrders, order],
+        aiReports: [...s.aiReports, ...reports],
+      }));
+    } catch (e) {
+      console.error('[Command] Parse failed:', e);
+    }
+  },
+
+  delegateForceToAICommand: (forceId, autonomy, riskTolerance, reportLevel) => {
+    const { forces } = get();
+    const force = forces.find(f => f.id === forceId);
+    if (!force) return;
+    const delegated = delegateForceToAI({ force, commanderId: 'ai_hq', autonomy, riskTolerance, reportLevel });
+    set(s => ({
+      forces: s.forces.map(f => f.id === forceId ? delegated : f),
+    }));
+  },
+
+  recallForceFromAICommand: (forceId) => {
+    const { forces } = get();
+    const force = forces.find(f => f.id === forceId);
+    if (!force) return;
+    const recalled = recallForceFromAI(force);
+    set(s => ({
+      forces: s.forces.map(f => f.id === forceId ? recalled : f),
+    }));
+  },
+
+  appendBattleLogEvents: (events) => {
+    const { turn, forces } = get();
+    const reports = generateReportsFromBattleLog({ events, turn, commanderId: 'system', relatedForceIds: forces.map(f => f.id) });
+    set(s => ({
+      battleLogEvents: [...s.battleLogEvents, ...events],
+      aiReports: [...s.aiReports, ...reports],
+    }));
+  },
+
+  clearReports: () => set({ aiReports: [] }),
+
+  toggleWorldAtlasMode: () => set(s => ({ worldAtlasMode: !s.worldAtlasMode })),
 
   // ===== Strategic-Tactical Integration Actions =====
 

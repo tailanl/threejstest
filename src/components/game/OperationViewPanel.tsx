@@ -2,14 +2,30 @@
 
 import React from 'react';
 import type { OperationView } from '@/game/world-view/operation-view';
+import type { WorldPosition } from '@/game/world-atlas/atlas-types';
+
+const TERRAIN_COLORS: Record<string, string> = {
+  plains: '#82e0aa',
+  forest: '#1e8449',
+  mountain: '#7f8c8d',
+  water: '#1a5276',
+  desert: '#f9e79f',
+  marshland: '#76d7c4',
+  highland: '#aeb6bf',
+  city: '#f0b27a',
+};
 
 interface OperationViewPanelProps {
   operationView: OperationView | null;
   onClose: () => void;
+  onCellClick?: (pos: WorldPosition) => void;
 }
 
-export default function OperationViewPanel({ operationView, onClose }: OperationViewPanelProps) {
+export default function OperationViewPanel({ operationView, onClose, onCellClick }: OperationViewPanelProps) {
   if (!operationView) return null;
+
+  const cells = operationView.cells;
+  const hasGrid = cells.length > 0 && cells[0]?.length > 0;
 
   return (
     <div className="bg-gray-900/80 border border-cyan-500/20 rounded-xl p-4 space-y-3">
@@ -26,6 +42,44 @@ export default function OperationViewPanel({ operationView, onClose }: Operation
         <div>Friendly: {operationView.friendlyForces.length}</div>
         <div>Supply Lines: {operationView.supplyLines.length}</div>
       </div>
+
+      {/* Clickable cell grid */}
+      {hasGrid && (
+        <div className="overflow-auto max-h-96 border border-gray-700 rounded">
+          <div
+            className="grid"
+            style={{
+              gridTemplateColumns: `repeat(${cells[0].length}, 12px)`,
+              width: 'fit-content',
+            }}
+          >
+            {cells.flatMap((row, rIdx) =>
+              row.map((cell, cIdx) => {
+                const color = TERRAIN_COLORS[cell.baseTerrain as string] ?? '#555';
+                const hasFeature = cell.features?.length > 0;
+                return (
+                  <div
+                    key={`${rIdx}_${cIdx}`}
+                    title={`(${cell.globalX},${cell.globalY}) ${cell.baseTerrain}${hasFeature ? ' ' + cell.features?.join(',') : ''}`}
+                    className="cursor-pointer hover:outline hover:outline-1 hover:outline-white"
+                    style={{
+                      width: 12,
+                      height: 12,
+                      backgroundColor: color,
+                      border: onCellClick ? '0.5px solid rgba(255,255,255,0.05)' : 'none',
+                    }}
+                    onClick={() => {
+                      if (onCellClick) {
+                        onCellClick({ globalX: cell.globalX, globalY: cell.globalY });
+                      }
+                    }}
+                  />
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
 
       {operationView.objectives.length > 0 && (
         <div className="space-y-1">

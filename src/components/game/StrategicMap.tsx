@@ -18,6 +18,10 @@ import {
   Zap, Star, FastForward, Check, Wand2, Trash2, Plus, BarChart3, Save,
 } from 'lucide-react';
 import { UNIT_CONFIGS } from '@/game/config';
+import AIReportPanel from './AIReportPanel';
+import CommandInputPanel from './CommandInputPanel';
+import ForceDelegationPanel from './ForceDelegationPanel';
+import OperationViewPanel from './OperationViewPanel';
 
 // ===== Force Type Emoji Mapping for sector cells =====
 const FORCE_TYPE_EMOJI: Record<string, string> = {
@@ -747,6 +751,21 @@ export default function StrategicMap() {
     gameSpeed, showSavePanel,
   } = state;
 
+  const worldAtlasMode = useStrategicStore(s => s.worldAtlasMode);
+  const selectedOperationView = useStrategicStore(s => s.selectedOperationView);
+  const selectedCombatViewport = useStrategicStore(s => s.selectedCombatViewport);
+  const aiReports = useStrategicStore(s => s.aiReports);
+  const generateWorldAtlasAndRegion = useStrategicStore(s => s.generateWorldAtlasAndRegion);
+  const openOperationViewForSector = useStrategicStore(s => s.openOperationViewForSector);
+  const openCombatViewportFromOperationCell = useStrategicStore(s => s.openCombatViewportFromOperationCell);
+  const closeOperationView = useStrategicStore(s => s.closeOperationView);
+  const closeCombatViewport = useStrategicStore(s => s.closeCombatViewport);
+  const submitHQCommand = useStrategicStore(s => s.submitHQCommand);
+  const delegateForceToAICommand = useStrategicStore(s => s.delegateForceToAICommand);
+  const recallForceFromAICommand = useStrategicStore(s => s.recallForceFromAICommand);
+  const clearReports = useStrategicStore(s => s.clearReports);
+  const toggleWorldAtlasMode = useStrategicStore(s => s.toggleWorldAtlasMode);
+
   const [showLegend, setShowLegend] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [saveToast, setSaveToast] = useState<string | null>(null);
@@ -830,9 +849,15 @@ export default function StrategicMap() {
     return set;
   }, [forces, state.map]);
 
-  const handleSectorClick = (pos: StrategicPosition) => {
-    useStrategicStore.getState().onSectorClick(pos);
-  };
+  const handleSectorClick = useCallback((pos: StrategicPosition) => {
+    if (worldAtlasMode) {
+      const sector = map.sectors[pos.y]?.[pos.x];
+      const hasCity = sector?.features?.includes('city') || sector?.features?.includes('city_center') || sector?.features?.includes('capital');
+      openOperationViewForSector(pos, hasCity ?? false);
+    } else {
+      useStrategicStore.getState().onSectorClick(pos);
+    }
+  }, [worldAtlasMode, map, openOperationViewForSector]);
 
   const handleEndTurn = () => {
     useStrategicStore.getState().onEndTurn();
@@ -1125,6 +1150,17 @@ export default function StrategicMap() {
               >
                 <Save className="w-3 h-3" />存档
               </motion.button>
+            )}
+
+            {/* WorldAtlas Generate Button */}
+            {worldAtlasMode ? (
+              <button onClick={toggleWorldAtlasMode} className="px-2 py-1 text-xs bg-cyan-600 text-white rounded cursor-pointer">
+                退出地图
+              </button>
+            ) : (
+              <button onClick={generateWorldAtlasAndRegion} className="px-2 py-1 text-xs bg-cyan-600 text-white rounded cursor-pointer">
+                🌍 生成WorldAtlas
+              </button>
             )}
 
             <Button
@@ -1515,6 +1551,40 @@ export default function StrategicMap() {
               })}
             </div>
           </div>
+
+          {/* AIReportPanel */}
+          <div className="mt-4 border-t border-gray-700 pt-3">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-xs text-cyan-400 font-bold">📋 情报报告 ({aiReports.length})</span>
+              <button onClick={clearReports} className="text-xs text-gray-500 hover:text-red-400 cursor-pointer">清除</button>
+            </div>
+            <AIReportPanel
+              reports={aiReports}
+              onAcknowledge={() => {}}
+            />
+          </div>
+
+          {/* ForceDelegationPanel */}
+          {selectedForce && selectedForce.faction === currentFaction && (
+            <div className="mt-4 border-t border-gray-700 pt-3">
+              <ForceDelegationPanel
+                forceStates={[{
+                  forceId: selectedForce.id,
+                  controller: 'player_direct',
+                  currentOrderIds: [],
+                  autonomy: 'normal',
+                  reportLevel: 'normal',
+                  riskTolerance: 'medium',
+                }]}
+                onDelegate={(forceId, autonomy, riskTolerance) => {
+                  delegateForceToAICommand(forceId, autonomy, riskTolerance, 'normal');
+                }}
+                onRecall={(forceId) => {
+                  recallForceFromAICommand(forceId);
+                }}
+              />
+            </div>
+          )}
         </div>
 
         {/* ===== MAP GRID ===== */}
@@ -1672,8 +1742,43 @@ export default function StrategicMap() {
         </div>
       </div>
 
-      {/* ===== BOTTOM BAR - Combat Log (Enhanced) ===== */}
-      <div className="flex-shrink-0 bg-black/50 backdrop-blur border-t border-white/10 px-3 py-1.5">
+      {/* WorldAtlas Mode Panels */}
+      {selectedOperationView && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center">
+          <div className="bg-gray-900 border border-cyan-700 rounded-lg p-4 max-w-5xl w-full max-h-[90vh] overflow-auto">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-cyan-400 font-bold text-lg">
+                🔍 OperationView — {selectedOperationView.cells.length > 0 ? `${selectedOperationView.cells.length}x${selectedOperationView.cells[0]?.length ?? 0}` : 'Loading...'}
+              </h3>
+              <button onClick={closeOperationView} className="text-gray-400 hover:text-white text-xl">&times;</button>
+            </div>
+            <OperationViewPanel
+              operationView={selectedOperationView}
+              onClose={closeOperationView}
+              onCellClick={(pos) => {
+                openCombatViewportFromOperationCell(pos);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {selectedCombatViewport && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center">
+          <div className="bg-gray-900 border border-red-700 rounded-lg p-4 max-w-4xl w-full max-h-[90vh] overflow-auto">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-red-400 font-bold text-lg">⚔️ CombatViewport {selectedCombatViewport.worldRect.width}x{selectedCombatViewport.worldRect.height}</h3>
+              <button onClick={closeCombatViewport} className="text-gray-400 hover:text-white text-xl">&times;</button>
+            </div>
+            <div className="text-gray-300 text-sm">
+              Battleground ready. Use tactical mode to fight.
+            </div>
+          </div>
+        </div>
+      )}
+
+    {/* ===== BOTTOM BAR - Combat Log (Enhanced) ===== */}
+    <div className="flex-shrink-0 bg-black/50 backdrop-blur border-t border-white/10 px-3 py-1.5">
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-amber-400 font-bold flex-shrink-0 flex items-center gap-0.5">
             <Zap className="w-3 h-3" />战斗日志
@@ -1690,6 +1795,18 @@ export default function StrategicMap() {
             </div>
           </ScrollArea>
         </div>
+      </div>
+
+      {/* Command Input */}
+      <div className="flex-shrink-0 bg-black/40 backdrop-blur border-t border-white/10 px-3 py-1.5">
+        <CommandInputPanel
+          onCommand={(text: string) => {
+            const forceIds = selectedForce ? [selectedForce.id] : [];
+            submitHQCommand(text, forceIds);
+          }}
+          selectedForceIds={selectedForce ? [selectedForce.id] : []}
+          turn={turn}
+        />
       </div>
 
       {/* ===== GAME OVER OVERLAY ===== */}

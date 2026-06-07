@@ -1,3 +1,4 @@
+/** @deprecated Use directory equivalents under src/game/world-map/ and src/game/world-view/ instead */
 import type { CombatViewport, WorldCell, WorldFeatureType } from './world-map-types';
 import type { GameMap, MapCell, TerrainType, Position, TacticalFeatureType } from './types';
 

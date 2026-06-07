@@ -1,3 +1,4 @@
+/** @deprecated Use directory equivalents under src/game/world-map/ and src/game/world-view/ instead */
 import type { WorldMap, CombatViewport } from './world-map-types';
 
 export function getCombatViewport(params: {

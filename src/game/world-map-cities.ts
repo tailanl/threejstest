@@ -1,3 +1,4 @@
+/** @deprecated Use directory equivalents under src/game/world-map/ and src/game/world-view/ instead */
 /**
  * WorldMap 城市生成 - 选址、评分、绘制城市区域
  */

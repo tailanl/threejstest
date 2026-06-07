@@ -1,3 +1,4 @@
+/** @deprecated Use directory equivalents under src/game/world-map/ and src/game/world-view/ instead */
 /**
  * WorldMap 军事特征放置 - 要塞、机场、补给站
  *

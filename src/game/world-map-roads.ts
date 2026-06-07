@@ -1,3 +1,4 @@
+/** @deprecated Use directory equivalents under src/game/world-map/ and src/game/world-view/ instead */
 /**
  * WorldMap 道路网络生成
  *

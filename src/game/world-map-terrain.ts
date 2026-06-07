@@ -1,3 +1,4 @@
+/** @deprecated Use directory equivalents under src/game/world-map/ and src/game/world-view/ instead */
 /**
  * WorldMap 地形生成 - 高度图、坡度、水域、湿度、温度、地形分类
  */

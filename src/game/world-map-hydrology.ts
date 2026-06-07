@@ -1,3 +1,4 @@
+/** @deprecated Use directory equivalents under src/game/world-map/ and src/game/world-view/ instead */
 /**
  * WorldMap 河流水系生成 - 主河、支流、溪流
  */

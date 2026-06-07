@@ -1,3 +1,4 @@
+/** @deprecated Use directory equivalents under src/game/world-map/ and src/game/world-view/ instead */
 import type { WorldMap, StrategicChunk, WorldTerrainType, WorldFeatureType } from './world-map-types';
 
 const ALL_TERRAIN_TYPES: WorldTerrainType[] = [
