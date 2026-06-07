@@ -1,3 +1,5 @@
+import type { ModernCombatStats } from './combat-modern/modern-unit-types';
+
 // ===== 战棋游戏核心类型定义 =====
 
 /** 单位类型 */
@@ -103,14 +105,7 @@ export interface Unit {
   // v25.0: Unit action history
   actionHistory: UnitActionRecord[];
   // Modern combat fields (combat-modern module)
-  modern?: {
-    suppression: number;
-    morale: number;
-    cohesion: number;
-    fuel: number;
-    maxFuel: number;
-    ammo: Record<string, number>;
-  };
+  modern?: ModernCombatStats;
 }
 
 /** 地形属性 */

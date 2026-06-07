@@ -5,6 +5,7 @@
 import type { WorldPosition } from '../world-atlas/atlas-types';
 import type { WorldCell } from '../world-map/world-cell-types';
 import type { RegionTile } from '../world-map/world-map-types';
+import { getClampedLocalViewRect } from './view-rect-utils';
 
 export type BattleType =
   | 'meeting_engagement'
@@ -65,15 +66,19 @@ export function getCombatViewport(params: {
   const localCenterX = center.globalX - regionTile.worldOrigin.globalX;
   const localCenterY = center.globalY - regionTile.worldOrigin.globalY;
 
-  const startX = Math.max(0, localCenterX - Math.floor(width / 2));
-  const startY = Math.max(0, localCenterY - Math.floor(height / 2));
-  const endX = Math.min(regionTile.width, startX + width);
-  const endY = Math.min(regionTile.height, startY + height);
+  const localRect = getClampedLocalViewRect({
+    centerX: localCenterX,
+    centerY: localCenterY,
+    width,
+    height,
+    maxWidth: regionTile.width,
+    maxHeight: regionTile.height,
+  });
 
   const cells: WorldCell[][] = [];
-  for (let y = startY; y < endY; y++) {
+  for (let y = localRect.y; y < localRect.y + localRect.height; y++) {
     const row: WorldCell[] = [];
-    for (let x = startX; x < endX; x++) {
+    for (let x = localRect.x; x < localRect.x + localRect.width; x++) {
       if (y < regionTile.cells.length && x < regionTile.cells[y].length) {
         row.push(regionTile.cells[y][x]);
       }
@@ -84,10 +89,10 @@ export function getCombatViewport(params: {
   return {
     id: `combat_${center.globalX}_${center.globalY}_${width}x${height}`,
     worldRect: {
-      x: regionTile.worldOrigin.globalX + startX,
-      y: regionTile.worldOrigin.globalY + startY,
-      width: endX - startX,
-      height: endY - startY,
+      x: regionTile.worldOrigin.globalX + localRect.x,
+      y: regionTile.worldOrigin.globalY + localRect.y,
+      width: localRect.width,
+      height: localRect.height,
     },
     cells,
     center,

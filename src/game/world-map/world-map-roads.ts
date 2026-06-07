@@ -104,6 +104,8 @@ export function generateRegionRoads(ctx: RegionGenerationContext): void {
   }
 
   const regionSize = cells.length;
+  const ox = ctx.worldOrigin.globalX;
+  const oy = ctx.worldOrigin.globalY;
 
   // Connect cities with A*
   for (let i = 0; i < cities.length; i++) {
@@ -111,10 +113,10 @@ export function generateRegionRoads(ctx: RegionGenerationContext): void {
       const from = cities[i];
       const to = cities[j];
 
-      const fx = from.center.globalX % regionSize;
-      const fy = from.center.globalY % regionSize;
-      const tx = to.center.globalX % regionSize;
-      const ty = to.center.globalY % regionSize;
+      const fx = from.center.globalX - ox;
+      const fy = from.center.globalY - oy;
+      const tx = to.center.globalX - ox;
+      const ty = to.center.globalY - oy;
 
       const roadType = (from.rank === 'regional' || to.rank === 'regional') ? 'main' : 'secondary';
       const feature = roadType === 'main' ? 'main_road' : 'secondary_road';
@@ -128,7 +130,7 @@ export function generateRegionRoads(ctx: RegionGenerationContext): void {
           const cell = cells[pt.y]?.[pt.x];
           if (!cell) continue;
           if (!cell.features.includes(feature)) cell.features.push(feature);
-          path.push({ globalX: from.center.globalX + (pt.x - fx), globalY: from.center.globalY + (pt.y - fy) });
+          path.push({ globalX: ox + pt.x, globalY: oy + pt.y });
         }
       } else {
         // Fallback: straight line
@@ -142,7 +144,7 @@ export function generateRegionRoads(ctx: RegionGenerationContext): void {
           const cell = cells[y]?.[x];
           if (!cell || cell.baseTerrain === 'water') continue;
           if (!cell.features.includes(feature)) cell.features.push(feature);
-          path.push({ globalX: from.center.globalX + Math.round((tx - fx) * t), globalY: from.center.globalY + Math.round((ty - fy) * t) });
+          path.push({ globalX: ox + x, globalY: oy + y });
         }
       }
 
