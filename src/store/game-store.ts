@@ -1,7 +1,7 @@
 // ===== 游戏状态管理 (Zustand) =====
 
 import { create } from 'zustand';
-import { GameState, Position, Unit, GamePhase, Faction, AIDifficulty, MapType, MovementAnimation, DamagePopup, CombatToast, UnitType, TacticalDeploymentInfo, TACTICAL_UNIT_COSTS, TACTICAL_DEPLOYMENT_BUDGET, CapturePoint, ReinforcementUnit, ReplayAction, ReplayState, TutorialStep, TUTORIAL_STEPS, SAVE_VERSION } from '@/game/types';
+import { GameState, GameMap, Position, Unit, GamePhase, Faction, AIDifficulty, MapType, MovementAnimation, DamagePopup, CombatToast, UnitType, TacticalDeploymentInfo, TACTICAL_UNIT_COSTS, TACTICAL_DEPLOYMENT_BUDGET, CapturePoint, ReinforcementUnit, ReplayAction, ReplayState, TutorialStep, TUTORIAL_STEPS, SAVE_VERSION } from '@/game/types';
 import { 
   initGameState, selectUnit, moveUnit, attackUnit,
   endTurn, deselectUnit, findBestAttackPosition, findMovementPath,
@@ -96,6 +96,12 @@ interface GameStore extends GameState {
   // Strategic-Tactical integration
   isStrategicTacticalBattle: boolean;
   initStrategicTacticalBattle: (tacticalState: GameState) => void;
+  initTacticalBattleFromMap: (params: {
+    map: GameMap;
+    source?: 'world-combat-viewport' | 'legacy';
+    sourceWorldRect?: { x: number; y: number; width: number; height: number };
+    difficulty?: AIDifficulty;
+  }) => void;
   returnToStrategic: () => void;
   enterTacticalFromCombatViewport: () => void;
   // Deployment actions
@@ -1886,6 +1892,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
     });
   },
 
+  initTacticalBattleFromMap: ({ map, source = 'legacy', sourceWorldRect, difficulty }) => {
+    const tacticalState = initGameStateFromMap(map, difficulty ?? get().aiDifficulty ?? 'normal');
+    if (sourceWorldRect) {
+      console.log('[GameStore] tactical source rect', sourceWorldRect);
+    }
+    set({
+      ...tacticalState,
+      isAiProcessing: false,
+      animationKey: 0,
+      isStrategicTacticalBattle: source === 'world-combat-viewport',
+      gameStartTime: Date.now(),
+      previousTurnState: null,
+      mapType: 'procedural',
+    });
+  },
+
   returnToStrategic: () => {
     const state = get();
     if (!state.isStrategicTacticalBattle) return;
@@ -1936,14 +1958,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return;
     }
 
-    const tacticalState = initGameStateFromMap(gameMap, strategicState.aiDifficulty ?? 'normal');
-    set({
-      ...tacticalState,
-      isAiProcessing: false,
-      animationKey: 0,
-      isStrategicTacticalBattle: true,
-      gameStartTime: Date.now(),
-      previousTurnState: null,
+    get().initTacticalBattleFromMap({
+      map: gameMap,
+      source: 'world-combat-viewport',
+      sourceWorldRect: strategicState.selectedCombatViewport?.worldRect,
+      difficulty: strategicState.aiDifficulty ?? 'normal',
     });
     // Switch to tactical mode in strategic store
     strategicState.setGameMode('tactical');

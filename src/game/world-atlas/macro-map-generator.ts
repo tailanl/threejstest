@@ -216,6 +216,7 @@ export function generateWorldAtlas(config: WorldAtlasConfig): WorldAtlas {
     virtualWidth: config.virtualWidth,
     virtualHeight: config.virtualHeight,
     regionSize,
+    strategicChunkSize: config.strategicChunkSize,
     regionGridWidth,
     regionGridHeight,
     macroWidth,
@@ -241,8 +242,8 @@ function generatePoliticalRegions(config: WorldAtlasConfig, macroCells: MacroCel
   const { macroWidth, macroHeight } = config;
 
   for (let i = 0; i < count; i++) {
-    const cx = rng.nextInt(macroWidth * 0.1, macroWidth * 0.9);
-    const cy = rng.nextInt(macroHeight * 0.1, macroHeight * 0.9);
+    const cx = rng.nextInt(Math.floor(macroWidth * 0.1), Math.floor(macroWidth * 0.9));
+    const cy = rng.nextInt(Math.floor(macroHeight * 0.1), Math.floor(macroHeight * 0.9));
     const radius = rng.nextInt(15, 40);
     const cells: Array<{x:number;y:number}> = [];
 

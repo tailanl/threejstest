@@ -136,6 +136,7 @@ interface StrategicStore extends StrategicGameState {
   openCombatViewportFromOperationCell: (pos: { globalX: number; globalY: number }) => void;
   closeOperationView: () => void;
   closeCombatViewport: () => void;
+  enterTacticalFromCombatViewport: () => void;
   submitHQCommand: (text: string, assignedForceIds: string[]) => void;
   delegateForceToAICommand: (forceId: string, autonomy: ForceCommandState['autonomy'], riskTolerance: ForceCommandState['riskTolerance'], reportLevel: ForceCommandState['reportLevel']) => void;
   recallForceFromAICommand: (forceId: string) => void;
@@ -609,31 +610,52 @@ export const useStrategicStore = create<StrategicStore>((set, get) => ({
   closeOperationView: () => set({ selectedOperationView: undefined }),
   closeCombatViewport: () => set({ selectedCombatViewport: undefined }),
 
+  enterTacticalFromCombatViewport: () => {
+    const { selectedCombatViewport, tacticalMapFromWorld, aiDifficulty } = get();
+    if (!selectedCombatViewport || !tacticalMapFromWorld) {
+      console.warn('[WorldAtlas] No CombatViewport tactical map available');
+      return;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { useGameStore } = require('@/store/game-store');
+    useGameStore.getState().initTacticalBattleFromMap({
+      map: tacticalMapFromWorld,
+      source: 'world-combat-viewport',
+      sourceWorldRect: selectedCombatViewport.worldRect,
+      difficulty: aiDifficulty,
+    });
+
+    set({
+      gameMode: 'tactical' as GameMode,
+      showBattleChoiceDialog: false,
+    });
+  },
+
   submitHQCommand: (text, assignedForceIds) => {
-    const { turn, forces } = get();
+    const { turn } = get();
     try {
       const parsed = parseCommandText(text);
       const order = createHQOrderFromParsed(parsed, assignedForceIds, turn, text);
-      const reports: AIReport[] = [{
-        id: `order_${Date.now()}`,
+      const event: BattleLogEvent = {
+        id: `order_received_${order.id}`,
         turn,
-        timestamp: Date.now(),
-        type: 'ORDER_CONFIRMATION',
-        fromCommanderId: 'player',
+        time: Date.now(),
+        type: 'order_received',
+        confirmedByPlayer: true,
+        visibilityConfidence: 'confirmed',
+        message: `Order received: ${order.intent}. ${text}`,
+      };
+      const reports = generateReportsFromBattleLog({
+        events: [event],
+        turn,
+        commanderId: 'hq',
         relatedOrderIds: [order.id],
         relatedForceIds: assignedForceIds,
-        title: 'Command Received',
-        summary: `HQ Order #${order.id}: ${order.intent}`,
-        facts: [`Command: ${text}`, `Forces: ${assignedForceIds.join(', ') || 'none'}`],
-        estimates: [],
-        losses: { friendlyConfirmed: { tanksDestroyed: 0, ifvsDestroyed: 0, infantryKilled: 0, artilleryDestroyed: 0, otherDestroyed: 0, total: 0 }, enemyConfirmed: { tanksDestroyed: 0, ifvsDestroyed: 0, infantryKilled: 0, artilleryDestroyed: 0, otherDestroyed: 0, total: 0 }, enemyEstimated: { tanksDestroyed: 0, ifvsDestroyed: 0, infantryKilled: 0, artilleryDestroyed: 0, otherDestroyed: 0, total: 0 } },
-        supply: { ammoState: 'good', fuelState: 'good', repairState: 'good' },
-        recommendations: [],
-        confidence: 'high',
-        rawLogIds: [],
-      }];
+      });
       set(s => ({
         activeOrders: [...s.activeOrders, order],
+        battleLogEvents: [...s.battleLogEvents, event],
         aiReports: [...s.aiReports, ...reports],
       }));
     } catch (e) {

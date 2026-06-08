@@ -25,6 +25,7 @@ export interface WorldAtlas {
   virtualHeight: number;
 
   regionSize: number;
+  strategicChunkSize: number;
   regionGridWidth: number;
   regionGridHeight: number;
 

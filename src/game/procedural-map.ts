@@ -3125,6 +3125,8 @@ export function generateHierarchicalMap(config: HierarchicalConfig): Hierarchica
   }
 
   // ===== 步骤4: 微观展开 - 将模板展开为实际地形网格 =====
+  // All nulls were filled at step 3, macroGrid is now fully populated
+  const filledGrid: TemplateType[][] = macroGrid as TemplateType[][];
   const cells: MapCell[][] = [];
   const macroBounds: HierarchicalMap['macroBounds'] = [];
   let curX = 0, curZ = 0;
@@ -3134,7 +3136,7 @@ export function generateHierarchicalMap(config: HierarchicalConfig): Hierarchica
   for (let mz = 0; mz < macroHeight; mz++) {
     let maxH = 0;
     for (let mx = 0; mx < macroWidth; mx++) {
-      maxH = Math.max(maxH, TEMPLATE_REGISTRY[macroGrid[mz][mx]].size);
+      maxH = Math.max(maxH, TEMPLATE_REGISTRY[filledGrid[mz][mx]].size);
     }
     rowMaxHeights.push(maxH);
   }
@@ -3142,16 +3144,16 @@ export function generateHierarchicalMap(config: HierarchicalConfig): Hierarchica
   for (let mz = 0; mz < macroHeight; mz++) {
     const rowMaxH = rowMaxHeights[mz];
     for (let mx = 0; mx < macroWidth; mx++) {
-      const templateType = macroGrid[mz][mx];
+      const templateType = filledGrid[mz][mx];
       const templateDef = TEMPLATE_REGISTRY[templateType];
       const ts = templateDef.size;
 
       // 收集邻居信息用于模板生成
       const neighbors: TemplateType[] = [];
-      if (mx > 0) neighbors.push(macroGrid[mz][mx - 1]);
-      if (mx < macroWidth - 1) neighbors.push(macroGrid[mz][mx + 1]);
-      if (mz > 0) neighbors.push(macroGrid[mz - 1][mx]);
-      if (mz < macroHeight - 1) neighbors.push(macroGrid[mz + 1][mx]);
+      if (mx > 0) neighbors.push(filledGrid[mz][mx - 1]);
+      if (mx < macroWidth - 1) neighbors.push(filledGrid[mz][mx + 1]);
+      if (mz > 0) neighbors.push(filledGrid[mz - 1][mx]);
+      if (mz < macroHeight - 1) neighbors.push(filledGrid[mz + 1][mx]);
 
       const templateGrid = templateDef.generate(rng, mx, mz, neighbors);
 
@@ -3210,7 +3212,7 @@ export function generateHierarchicalMap(config: HierarchicalConfig): Hierarchica
   const biomeCounts: Record<string, number> = {};
   for (let z = 0; z < macroHeight; z++)
     for (let x = 0; x < macroWidth; x++) {
-      templateCounts[macroGrid[z][x]] = (templateCounts[macroGrid[z][x]] ?? 0) + 1;
+      templateCounts[filledGrid[z][x]] = (templateCounts[filledGrid[z][x]] ?? 0) + 1;
     }
   for (let z = 0; z < finalHeight; z++)
     for (let x = 0; x < finalWidth; x++) {
@@ -3221,7 +3223,7 @@ export function generateHierarchicalMap(config: HierarchicalConfig): Hierarchica
 
   return {
     cells,
-    macroGrid,
+    macroGrid: filledGrid,
     macroBounds,
     width: finalWidth,
     height: finalHeight,
@@ -3393,6 +3395,14 @@ export interface FusedMapResult {
   roads: RoadSegment[];
   strongholds: StrongholdData[];
   regions: RegionData[];
+  detailedRegions?: Array<{
+    regionId: string;
+    cells: MapCell[][];
+    width: number;
+    height: number;
+    offsetX: number;
+    offsetZ: number;
+  }>;
   macroOverlay: MapCell[][];
   /** 像素级局部细节图 - 每个网格点都有一个局部详情 */
   pixelDetails: Array<{
@@ -3459,6 +3469,7 @@ const DEFAULT_FUSED_CONFIG: Required<FusedMapConfig> = {
   strongholdCount: 4,
   roadNetworkDensity: 'normal',
   microDetailLevel: 'medium',
+  detailGridSize: 13,
 };
 
 // ---------- 12.2 城市名称生成器 ----------
@@ -4541,8 +4552,8 @@ function expandDetailedRegions(
   rng: SeededRNG,
   width: number,
   height: number,
-): FusedMapResult['detailedRegions'] {
-  const detailedRegions: FusedMapResult['detailedRegions'] = [];
+): NonNullable<FusedMapResult['detailedRegions']> {
+  const detailedRegions: NonNullable<FusedMapResult['detailedRegions']> = [];
 
   // 预先填充占位，确保索引与 regions 一一对应
   for (const region of regions) {
@@ -5922,7 +5933,7 @@ export function saveRegionDetail(
   regionIndex: number,
 ): { localStorageKey: string; exportJson: string } {
   const region = fusedResult.regions[regionIndex];
-  const detail = fusedResult.detailedRegions[regionIndex];
+  const detail = fusedResult.detailedRegions?.[regionIndex];
   if (!region || !detail) {
     return { localStorageKey: '', exportJson: '' };
   }

@@ -3,7 +3,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStrategicStore, type StrategicSaveSlotInfo } from '@/store/strategic-store';
-import { useGameStore } from '@/store/game-store';
 import { STRATEGIC_TERRAIN_CONFIGS, StrategicTerrainType, StrategicForce, StrategicPosition, StrategicSector, StrategicPhase, ReinforcementInfo } from '@/game/strategic-types';
 import { FORCE_TEMPLATES, getDeploymentBudget } from '@/game/strategic-engine';
 import { Button } from '@/components/ui/button';
@@ -766,7 +765,7 @@ export default function StrategicMap() {
   const recallForceFromAICommand = useStrategicStore(s => s.recallForceFromAICommand);
   const clearReports = useStrategicStore(s => s.clearReports);
   const toggleWorldAtlasMode = useStrategicStore(s => s.toggleWorldAtlasMode);
-  const enterTacticalFromCombatViewport = useGameStore(s => s.enterTacticalFromCombatViewport);
+  const enterTacticalFromCombatViewport = useStrategicStore(s => s.enterTacticalFromCombatViewport);
 
   const [showLegend, setShowLegend] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);

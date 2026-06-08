@@ -3,7 +3,7 @@
  */
 
 import type { WorldPosition } from '../world-atlas/atlas-types';
-import type { RegionGenerationContext, GeneratedRoad } from './world-map-types';
+import type { RegionGenerationContext, GeneratedCity, GeneratedRoad } from './world-map-types';
 import type { WorldCell } from './world-cell-types';
 
 /**
@@ -59,7 +59,7 @@ function aStarRoadWithPath(
       let k = curKey;
       while (k !== undefined && k !== startKey) {
         const py = Math.floor(k / regionSize);
-        const px = k % regionSize;
+        const px = k - py * regionSize;
         path.unshift({ x: px, y: py });
         k = parentMap.get(k)!;
       }
@@ -96,69 +96,157 @@ function aStarRoadWithPath(
 }
 
 export function generateRegionRoads(ctx: RegionGenerationContext): void {
-  const { cells, cities, regionX, regionY, rng } = ctx;
+  const { cells, cities, regionX, regionY } = ctx;
   const roads: GeneratedRoad[] = [];
-  if (cities.length < 2) {
-    ctx.roads = roads;
-    return;
-  }
 
   const regionSize = cells.length;
   const ox = ctx.worldOrigin.globalX;
   const oy = ctx.worldOrigin.globalY;
 
-  // Connect cities with A*
-  for (let i = 0; i < cities.length; i++) {
-    for (let j = i + 1; j < cities.length; j++) {
-      const from = cities[i];
-      const to = cities[j];
+  if (cities.length === 0) {
+    ctx.roads = roads;
+    return;
+  }
 
-      const fx = from.center.globalX - ox;
-      const fy = from.center.globalY - oy;
-      const tx = to.center.globalX - ox;
-      const ty = to.center.globalY - oy;
+  if (cities.length === 1) {
+    const city = cities[0];
+    const start = toLocal(city, ox, oy, regionSize);
+    const targets = getNearestEdgeTargets(start, regionSize);
 
-      const roadType = (from.rank === 'regional' || to.rank === 'regional') ? 'main' : 'secondary';
-      const feature = roadType === 'main' ? 'main_road' : 'secondary_road';
-
-      // Try A* pathfinding
-      const pathResult = aStarRoadWithPath(cells, regionSize, fx, fy, tx, ty);
-
-      const path: WorldPosition[] = [];
-      if (pathResult) {
-        for (const pt of pathResult) {
-          const cell = cells[pt.y]?.[pt.x];
-          if (!cell) continue;
-          if (!cell.features.includes(feature)) cell.features.push(feature);
-          path.push({ globalX: ox + pt.x, globalY: oy + pt.y });
-        }
-      } else {
-        // Fallback: straight line
-        const dist = Math.sqrt((tx - fx) * (tx - fx) + (ty - fy) * (ty - fy));
-        const steps = Math.ceil(dist);
-        for (let s = 0; s <= steps; s++) {
-          const t = s / steps;
-          const x = Math.round(fx + (tx - fx) * t);
-          const y = Math.round(fy + (ty - fy) * t);
-          if (x < 0 || x >= regionSize || y < 0 || y >= regionSize) continue;
-          const cell = cells[y]?.[x];
-          if (!cell || cell.baseTerrain === 'water') continue;
-          if (!cell.features.includes(feature)) cell.features.push(feature);
-          path.push({ globalX: ox + x, globalY: oy + y });
-        }
-      }
-
+    for (let i = 0; i < targets.length; i++) {
+      const path = paintRoadPath(cells, regionSize, start, targets[i], ox, oy, 'secondary_road');
       if (path.length > 1) {
         roads.push({
-          id: `road_${regionX}_${regionY}_${i}_${j}`,
-          type: roadType,
-          fromId: from.id,
-          toId: to.id,
+          id: `road_${regionX}_${regionY}_exit_${i}`,
+          type: 'secondary',
+          fromId: city.id,
+          toId: `region_edge_${i}`,
           path,
         });
       }
     }
+
+    ctx.roads = roads;
+    return;
+  }
+
+  const edges = buildMinimumRoadNetwork(cities);
+  for (const [fromIndex, toIndex] of edges) {
+    const from = cities[fromIndex];
+    const to = cities[toIndex];
+    const start = toLocal(from, ox, oy, regionSize);
+    const end = toLocal(to, ox, oy, regionSize);
+    const roadType = from.rank === 'regional' && to.rank === 'regional' ? 'main' : 'secondary';
+    const feature = roadType === 'main' ? 'main_road' : 'secondary_road';
+    const path = paintRoadPath(cells, regionSize, start, end, ox, oy, feature);
+
+    if (path.length > 1) {
+      roads.push({
+        id: `road_${regionX}_${regionY}_${fromIndex}_${toIndex}`,
+        type: roadType,
+        fromId: from.id,
+        toId: to.id,
+        path,
+      });
+    }
   }
 
   ctx.roads = roads;
+}
+
+function toLocal(city: GeneratedCity, ox: number, oy: number, regionSize: number): { x: number; y: number } {
+  return {
+    x: clampLocal(city.center.globalX - ox, regionSize),
+    y: clampLocal(city.center.globalY - oy, regionSize),
+  };
+}
+
+function clampLocal(value: number, regionSize: number): number {
+  return Math.max(0, Math.min(regionSize - 1, Math.round(value)));
+}
+
+function getNearestEdgeTargets(start: { x: number; y: number }, regionSize: number): Array<{ x: number; y: number }> {
+  const horizontal = start.x <= regionSize - 1 - start.x
+    ? { x: 0, y: start.y }
+    : { x: regionSize - 1, y: start.y };
+  const vertical = start.y <= regionSize - 1 - start.y
+    ? { x: start.x, y: 0 }
+    : { x: start.x, y: regionSize - 1 };
+  return [horizontal, vertical];
+}
+
+function paintRoadPath(
+  cells: WorldCell[][],
+  regionSize: number,
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  ox: number,
+  oy: number,
+  feature: 'main_road' | 'secondary_road',
+): WorldPosition[] {
+  const pathResult = aStarRoadWithPath(cells, regionSize, start.x, start.y, end.x, end.y);
+  const localPath = pathResult ?? buildStraightPath(start, end, regionSize);
+  const path: WorldPosition[] = [];
+
+  for (const pt of localPath) {
+    const cell = cells[pt.y]?.[pt.x];
+    if (!cell || cell.baseTerrain === 'water') continue;
+    if (!cell.features.includes(feature)) cell.features.push(feature);
+    path.push({ globalX: ox + pt.x, globalY: oy + pt.y });
+  }
+
+  return path;
+}
+
+function buildStraightPath(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  regionSize: number,
+): Array<{ x: number; y: number }> {
+  const dist = Math.sqrt((end.x - start.x) * (end.x - start.x) + (end.y - start.y) * (end.y - start.y));
+  const steps = Math.max(1, Math.ceil(dist));
+  const path: Array<{ x: number; y: number }> = [];
+
+  for (let s = 0; s <= steps; s++) {
+    const t = s / steps;
+    path.push({
+      x: clampLocal(start.x + (end.x - start.x) * t, regionSize),
+      y: clampLocal(start.y + (end.y - start.y) * t, regionSize),
+    });
+  }
+
+  return path;
+}
+
+function buildMinimumRoadNetwork(cities: GeneratedCity[]): Array<[number, number]> {
+  const connected = new Set<number>([0]);
+  const edges: Array<[number, number]> = [];
+
+  while (connected.size < cities.length) {
+    let best: [number, number] | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    for (const fromIndex of connected) {
+      for (let toIndex = 0; toIndex < cities.length; toIndex++) {
+        if (connected.has(toIndex)) continue;
+        const distance = cityDistance(cities[fromIndex], cities[toIndex]);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = [fromIndex, toIndex];
+        }
+      }
+    }
+
+    if (!best) break;
+    edges.push(best);
+    connected.add(best[1]);
+  }
+
+  return edges;
+}
+
+function cityDistance(a: GeneratedCity, b: GeneratedCity): number {
+  const dx = a.center.globalX - b.center.globalX;
+  const dy = a.center.globalY - b.center.globalY;
+  return Math.sqrt(dx * dx + dy * dy);
 }

@@ -26,14 +26,14 @@ export function placeRegionBridges(ctx: RegionGenerationContext): void {
  * 当前为占位实现，后续可扩展
  */
 export function placeRegionFeatures(ctx: RegionGenerationContext): void {
-  const { cells, cities, rng } = ctx;
+  const { cells, cities, rng, worldOrigin } = ctx;
   const regionSize = cells.length;
 
   // Place supply depots near regional cities
   for (const city of cities) {
     if (city.rank !== 'regional') continue;
-    const cx = city.center.globalX % regionSize;
-    const cy = city.center.globalY % regionSize;
+    const cx = Math.round(city.center.globalX - worldOrigin.globalX);
+    const cy = Math.round(city.center.globalY - worldOrigin.globalY);
 
     // Try to place a supply depot near the city
     for (let attempt = 0; attempt < 20; attempt++) {
