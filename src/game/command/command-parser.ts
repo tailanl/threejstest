@@ -15,8 +15,8 @@ const INTENT_KEYWORDS: Record<string, string[]> = {
   support: ['支援', '炮兵支援', 'support', '火力支援', '掩护'],
   delay: ['迟滞', '拖延', 'delay', '阻击'],
   screen: ['掩护', '警戒', 'screen', '前哨'],
-  hold: ['坚守', '死守', 'hold', '固守'],
-  interdict: ['封锁', '切断', 'interdict', '阻断'],
+  hold: ['坚守', '死守', 'hold', '固守', '守住', '死守防线', '顶住'],
+  interdict: ['封锁', '切断', 'interdict', '阻断', '拦截', '伏击'],
 };
 
 const ROE_KEYWORDS: Record<string, string[]> = {
